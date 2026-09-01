@@ -119,15 +119,18 @@ TEST(MarkdownParse, SetextHeadings) {
     EXPECT_EQ(ide::render::parse("Title\n---"), Doc{{H(2, {T("Title")})}});
     EXPECT_EQ(ide::render::parse("a\nb\n==="), Doc{{H(1, {T("a\nb")})}});
     // underline without a pending paragraph is not a heading
-    EXPECT_EQ(ide::render::parse("---\n==="), Doc{{Block{ThematicBreak{}}, P({T("===")})}});
+    EXPECT_EQ(ide::render::parse("---\n==="),
+              (Doc{{Block{ThematicBreak{}}, P({T("===")})}}));
 }
 
 TEST(MarkdownParse, Paragraphs) {
     EXPECT_EQ(ide::render::parse("one"), Doc{{P({T("one")})}});
     EXPECT_EQ(ide::render::parse("one\ntwo"), Doc{{P({T("one\ntwo")})}});
-    EXPECT_EQ(ide::render::parse("a\n\nb"), Doc{{P({T("a")}), P({T("b")})}});
+    EXPECT_EQ(ide::render::parse("a\n\nb"),
+              (Doc{{P({T("a")}), P({T("b")})}}));
     // thematic break ends a paragraph; underline after a break is a paragraph
-    EXPECT_EQ(ide::render::parse("a\n***\nb"), Doc{{P({T("a")}), Block{ThematicBreak{}}, P({T("b")})}});
+    EXPECT_EQ(ide::render::parse("a\n***\nb"),
+              (Doc{{P({T("a")}), Block{ThematicBreak{}}, P({T("b")})}}));
 }
 
 TEST(MarkdownParse, FencedCode) {
@@ -160,7 +163,8 @@ TEST(MarkdownParse, BlockQuotes) {
     EXPECT_EQ(ide::render::parse("> > deep"), Doc{{BQ({BQ({P({T("deep")})})})}});
     EXPECT_EQ(ide::render::parse("> a\n> b"), Doc{{BQ({P({T("a\nb")})})}});
     // blank line ends the quote; two quotes
-    EXPECT_EQ(ide::render::parse("> a\n\n> b"), Doc{{BQ({P({T("a")})}), BQ({P({T("b")})})}});
+    EXPECT_EQ(ide::render::parse("> a\n\n> b"),
+              (Doc{{BQ({P({T("a")})}), BQ({P({T("b")})})}}));
     EXPECT_EQ(ide::render::parse(">"), Doc{{BQ({})}});
 }
 
@@ -183,7 +187,7 @@ TEST(MarkdownParse, Lists) {
     EXPECT_EQ(ide::render::parse("-"), Doc{{LS(false, {item({})})}});
     // paragraph ends the list
     EXPECT_EQ(ide::render::parse("- a\nplain"),
-              Doc{{LS(false, {item({P({T("a")})})}), P({T("plain")})}});
+              (Doc{{LS(false, {item({P({T("a")})})}), P({T("plain")})}}));
     // ordered lists and bullets don't merge
     {
         const Doc d = ide::render::parse("- a\n1. b");
@@ -205,17 +209,17 @@ TEST(MarkdownParse, ThematicBreaks) {
 
 TEST(MarkdownParse, Tables) {
     EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| 1 | 2 |"),
-              Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
+              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
                             {Alignment::None, Alignment::None},
-                            {{{CdCell("1")}, {CdCell("2")}}}}}});
+                            {{{CdCell("1")}, {CdCell("2")}}}}}}));
     EXPECT_EQ(ide::render::parse("| a | b |\n|:--|--:|"),
-              Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
+              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
                             {Alignment::Left, Alignment::Right},
-                            {}}}});
+                            {}}}}));
     EXPECT_EQ(ide::render::parse("| a | b |\n|:-:|---|"),
-              Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
+              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
                             {Alignment::Center, Alignment::None},
-                            {}}}});
+                            {}}}}));
     // no pipes in header -> not a table
     {
         const Doc d = ide::render::parse("plain\n---|---");
@@ -224,9 +228,9 @@ TEST(MarkdownParse, Tables) {
     }
     // ragged rows are padded/trimmed to the column count
     EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| only |"),
-              Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
+              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
                             {Alignment::None, Alignment::None},
-                            {{{CdCell("only")}, {CdCell("")}}}}}});
+                            {{{CdCell("only")}, {CdCell("")}}}}}}));
     // delimiter row without a pending header is a paragraph
     {
         const Doc d = ide::render::parse("|---|---|");
@@ -235,8 +239,8 @@ TEST(MarkdownParse, Tables) {
     }
     // inline content in cells
     EXPECT_EQ(ide::render::parse("| *a* | `b` |\n|---|---|"),
-              Doc{{Block{Table{{{Cell({E({T("a")})}), Cell({Cd("b")})}},
-                            {Alignment::None, Alignment::None}, {}}}});
+              (Doc{{Block{Table{{{Cell({E({T("a")})}), Cell({Cd("b")})}},
+                            {Alignment::None, Alignment::None}, {}}}}));
 }
 
 // helper used by table tests: build a TableCell from inline children
