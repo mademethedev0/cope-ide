@@ -33,6 +33,11 @@ namespace ide::syntax {
 ///   \o{...}                        -> \x{...}
 ///   \O (any char incl newline)     -> [\s\S]
 ///   (?m) (?-m) (Onig: dot-all)     -> (?s) (?-s) (PCRE2: dot-all)
+///   \p{alpha} \p{word} & co (POSIX long property names, unknown to PCRE2's
+///                                    \p{...}) -> [[:alpha:]] / [:alpha:]
+///                                    inside a class; \P{...} / \p{^...} negate
+///   a lone '{' (quantifier position: start, after '(' '|' or a quantifier —
+///                                    literal in Onig, error in PCRE2) -> \{
 ///   \x{cp} with cp > U+00FF        -> the UTF-8 bytes of cp, wrapped
 ///                                     (we compile in 8-bit non-UTF mode so
 ///                                      arbitrary file bytes never fail a match)

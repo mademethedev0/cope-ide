@@ -97,6 +97,8 @@ public:
                 ++i_;
             } else if (c == '(' && i_ + 1 < n && src_[i_ + 1] == '?') {
                 stepGroupQuestion();
+            } else if (c == '{') {
+                stepBrace();
             } else {
                 out_.push_back(c);
                 ++i_;
@@ -183,6 +185,10 @@ private:
             case 'o':
                 stepOctalEscape();
                 return;
+            case 'p':
+            case 'P':
+                stepProperty();
+                return;
             default:
                 // Everything else (assertions, classes, \Q..\E, POSIX and
                 // \p{...} bodies, quantifier modifiers) is native PCRE2; copy
@@ -192,6 +198,80 @@ private:
                 i_ += 2;
                 return;
         }
+    }
+
+    /// A '{' that cannot begin a quantifier (at pattern start, or right after
+    /// '(', '|', or another quantifier) is a literal brace in Oniguruma;
+    /// PCRE2 makes it a hard compile error ("quantifier does not follow a
+    /// repeatable item", "nothing to repeat"). Escape it so both engines
+    /// read the same literal. Over-accepts slightly: a brace Oniguruma would
+    /// also refuse compiles here as a literal, which is harmless.
+    void stepBrace() {
+        const char prev = out_.empty() ? '\0' : out_.back();
+        const bool quantifiable = !out_.empty() && prev != '(' && prev != '|' && prev != '*' &&
+                                  prev != '+' && prev != '?';
+        if (quantifiable) {
+            out_.push_back('{');
+        } else {
+            out_ += "\\{";
+        }
+        ++i_;
+    }
+
+    /// \p{...} / \P{...}: Oniguruma accepts the POSIX long names (alpha,
+    /// alnum, word, print, ...) that PCRE2's Unicode property syntax does not
+    /// know. Those are rewritten to POSIX bracket classes -- exact in 8-bit
+    /// byte mode. Unicode property names (L, Lu, Greek, ...) are native PCRE2
+    /// and copied verbatim. Onig's \p{^Name} negation flips the sense.
+    void stepProperty() {
+        const bool negated = (src_[i_ + 1] == 'P');
+        const size_t j = i_ + 2;
+        if (j >= src_.size() || src_[j] != '{') {
+            out_.push_back('\\');
+            out_.push_back(src_[i_ + 1]);  // \p not followed by '{': refuse below
+            i_ += 2;
+            return;
+        }
+        const size_t close = src_.find('}', j + 1);
+        if (close == std::string_view::npos) {
+            out_.push_back('\\');
+            out_.push_back(src_[i_ + 1]);
+            i_ += 2;
+            return;
+        }
+        std::string_view name = src_.substr(j + 1, close - j - 1);
+        bool negateName = false;
+        if (!name.empty() && name.front() == '^') {
+            negateName = true;
+            name.remove_prefix(1);
+        }
+        const bool negative = negated != negateName;
+        static constexpr std::string_view kPosix[] = {
+            "alpha", "alnum", "blank", "cntrl", "digit", "graph", "lower",
+            "print", "punct", "space", "upper", "word",  "xdigit", "ascii",
+        };
+        bool posix = false;
+        for (std::string_view candidate : kPosix) {
+            if (name == candidate) {
+                posix = true;
+                break;
+            }
+        }
+        if (!posix) {
+            out_.append(src_.substr(i_, close - i_ + 1));  // native: verbatim
+            i_ = close + 1;
+            return;
+        }
+        if (inClass_) {
+            out_ += negative ? "[:^" : "[:";
+            out_.append(name);
+            out_ += ":]";
+        } else {
+            out_ += negative ? "[^[:" : "[[:";
+            out_.append(name);
+            out_ += ":]]";
+        }
+        i_ = close + 1;
     }
 
     /// \g<name> \g'name' \g<n> \g<0> : Oniguruma subroutine calls, which PCRE2

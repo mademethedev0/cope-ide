@@ -300,6 +300,59 @@ TEST(Pcre2EngineTest, KeepOutAndGraphemeCompile) {
     EXPECT_NE(engine.compile("a\\Xb"), nullptr);
 }
 
+TEST(Pcre2EngineTest, OnigPosixPropertyNamesCompileAndMatch) {
+    // Oniguruma's POSIX long property names are unknown to PCRE2's \p{...}
+    // syntax; the translator must rewrite them. Word = [[:word:]].
+    Pcre2RegexEngine engine;
+    auto word = mustCompile(engine, "\\b\\p{word}+");
+    auto m = word->search("  ab12!", 0);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_EQ(m->begin, size_t(2));
+    EXPECT_EQ(m->end, size_t(6));
+
+    auto print = mustCompile(engine, "#\\p{print}*$");
+    EXPECT_TRUE(print->search("#abc", 0).has_value());
+
+    // Inside a class the rewrite must stay class-internal.
+    auto inClass = mustCompile(engine, "[\\p{alnum}_]+");
+    auto c = inClass->search(" x9_ ", 0);
+    ASSERT_TRUE(c.has_value());
+    EXPECT_EQ(c->begin, size_t(1));
+    EXPECT_EQ(c->end, size_t(4));
+
+    // Negated forms: \P{...} and Onig's \p{^...}.
+    auto neg = mustCompile(engine, "\\P{blank}+");
+    auto nm = neg->search(" \ta", 0);
+    ASSERT_TRUE(nm.has_value());
+    EXPECT_EQ(nm->begin, size_t(3));
+    EXPECT_EQ(nm->end, size_t(4));
+    auto caretNeg = mustCompile(engine, "\\p{^blank}+");
+    auto cm = caretNeg->search(" \ta", 0);
+    ASSERT_TRUE(cm.has_value());
+    EXPECT_EQ(cm->begin, size_t(3));
+    EXPECT_EQ(cm->end, size_t(4));
+}
+
+TEST(Pcre2EngineTest, LoneBraceAfterQuantifierIsLiteral) {
+    // Oniguruma/ECMAScript read a '{' that cannot start a quantifier as a
+    // literal brace; PCRE2 refuses to compile. The translator escapes it.
+    Pcre2RegexEngine engine;
+    auto re = mustCompile(engine, "a+{0,1}");
+    auto m = re->search("xa{0,1}", 0);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_EQ(m->begin, size_t(1));
+    EXPECT_EQ(m->end, size_t(7));
+    // A leading brace (nothing to repeat) is also literal.
+    auto lead = mustCompile(engine, "{2}b");
+    auto lm = lead->search("a{2}b", 0);
+    ASSERT_TRUE(lm.has_value());
+    EXPECT_EQ(lm->begin, size_t(1));
+    // A valid quantifier position must NOT be escaped.
+    auto quant = mustCompile(engine, "ab{2}");
+    EXPECT_TRUE(quant->search("abb", 0).has_value());
+    EXPECT_FALSE(quant->search("ab", 0).has_value());
+}
+
 TEST(Pcre2EngineTest, CacheServesRepeatedCompiles) {
     Pcre2RegexEngine engine;
     auto a = engine.compile(R"(\d+)");
