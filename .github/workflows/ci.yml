@@ -20,6 +20,13 @@ jobs:
       matrix:
         build_type: [Debug, Release]
         compiler: [gcc, clang]
+        # Extra leg: PCRE2-enabled build (slice 1 wiring verification).
+        # Existing legs are unchanged; matrix.pcre2 is unset (-> OFF) for them.
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            build_type: Release
+            pcre2: ON
 
     steps:
       - name: Checkout
@@ -52,6 +59,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DCOPE_BUILD_CLI=ON
           -DCOPE_BUILD_TESTS=ON
+          -DCOPE_USE_PCRE2=${{ matrix.pcre2 || 'OFF' }}
 
       - name: Build
         run: cmake --build build

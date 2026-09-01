@@ -12,6 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # --- Options ------------------------------------------------------------------
 option(COPE_BUILD_TESTS "Build the GoogleTest suite" ON)
 option(COPE_BUILD_CLI "Build the cope_cli host dev harness" ON)
+option(COPE_USE_PCRE2 "Fetch and build PCRE2 (regex backend, slice 1: build wiring only)" OFF)
 
 # --- Helper modules -----------------------------------------------------------
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -33,6 +34,40 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   else()
     add_link_options($<$<CONFIG:Release>:-Wl,--gc-sections>)
   endif()
+endif()
+
+# --- PCRE2 (optional regex backend) --------------------------------------------
+# Build wiring only: no engine code links this yet. When OFF, nothing below
+# has any effect on the rest of the project.
+if(COPE_USE_PCRE2)
+  include(FetchContent)
+  # PCRE2 is a C library; the root project declares CXX only.
+  enable_language(C)
+
+  set(PCRE2_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(PCRE2_BUILD_PCRE2GREP OFF CACHE BOOL "" FORCE)
+  set(PCRE2_BUILD_PCRE2_16 OFF CACHE BOOL "" FORCE)
+  set(PCRE2_BUILD_PCRE2_32 OFF CACHE BOOL "" FORCE)
+  set(PCRE2_SUPPORT_JIT ON CACHE BOOL "" FORCE)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+  FetchContent_Declare(
+    pcre2
+    GIT_REPOSITORY https://github.com/PCRE2Project/pcre2
+    GIT_TAG pcre2-10.48 # latest stable at time of writing
+  )
+  FetchContent_MakeAvailable(pcre2)
+
+  # Interface target for future consumers (src/syntax). The width is a
+  # preprocessor contract: consumers must see PCRE2_CODE_UNIT_WIDTH=8 to get
+  # the pcre2_xxx_8 API from pcre2.h.
+  add_library(cope::regex_pcre2 INTERFACE)
+  target_link_libraries(cope::regex_pcre2 INTERFACE pcre2-8)
+  target_compile_definitions(cope::regex_pcre2 INTERFACE
+    COPE_HAS_PCRE2=1
+    PCRE2_CODE_UNIT_WIDTH=8
+    PCRE2_STATIC
+  )
 endif()
 
 # --- Core modules -------------------------------------------------------------
@@ -66,3 +101,7 @@ if(COPE_BUILD_TESTS)
     message(STATUS "Cope: tests/CMakeLists.txt not present — tests skipped")
   endif()
 endif()
+
+# --- Configuration summary ----------------------------------------------------
+message(STATUS "Cope configuration:")
+message(STATUS "  PCRE2 (JIT): ${COPE_USE_PCRE2}")
