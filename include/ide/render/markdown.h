@@ -223,9 +223,13 @@ struct Doc {
 
 /// Serializes a document back to canonical markdown. Intended for round-trip
 /// stability testing and the CLI renderer's degrade paths; `parse(serialize(d))`
-/// reproduces `d` for every tree `parse` can produce (see tests). Known
-/// non-representable shapes (empty inline math, '|' inside code spans in
-/// table cells, '$' inside inline math) never arise from `parse` itself.
+/// reproduces `d` for every tree `parse` can produce, and serialization is a
+/// fixed point: `serialize(parse(serialize(parse(x)))) == serialize(parse(x))`
+/// for arbitrary byte strings (fuzz-tested). To keep that true, inline math is
+/// always emitted `$$…$$` (the single-`$` form cannot carry every parseable
+/// shape), and every line of a paragraph / setext-heading body whose start
+/// would re-read as a block construct gets an escaping backslash that the
+/// inline parser folds back on re-parse.
 [[nodiscard]] std::string serialize(const Doc& doc);
 
 /// Classifies a raw link/image target by its string shape alone. Pure

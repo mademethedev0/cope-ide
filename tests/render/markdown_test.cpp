@@ -429,6 +429,72 @@ TEST(MarkdownSerialize, CodeWithBackticks) {
     EXPECT_EQ(ide::render::parse(ide::render::serialize(d2)), d2);
 }
 
+TEST(MarkdownSerialize, FenceLangWithBacktick) {
+    // only ~~~ fences accept a backtick in the info string
+    const Doc d = ide::render::parse("~~~ `x\ny\n~~~");
+    EXPECT_EQ(d, Doc{{CB("`x", "y")}});
+    const std::string s = ide::render::serialize(d);
+    EXPECT_EQ(ide::render::parse(s), d);
+    EXPECT_EQ(ide::render::serialize(ide::render::parse(s)), s);
+}
+
+TEST(MarkdownSerialize, SoftBreakSecondLineGuards) {
+    // The line guard must apply to every line of a paragraph, not just the
+    // first: a soft break whose second line would re-read as a list / heading
+    // / quote / setext underline / thematic break is escaped and folds back.
+    const char* const sources[] = {
+        "a\\n\\- b",    "a\\n\\+ b",     "a\\n\\1. b",  "a\\n\\# b",
+        "a\\n\\> b",    "a\\n\\=",       "a\\n\\===",   "a\\n\\- - -",
+        "x y\\n2\\) z", " \\# x",   "a\\n\\:--|--",
+    };
+    for (const char* src : sources) {
+        const Doc d = ide::render::parse(src);
+        const std::string s1 = ide::render::serialize(d);
+        EXPECT_EQ(ide::render::parse(s1), d) << "tree lost, source:\n" << src;
+        EXPECT_EQ(ide::render::serialize(ide::render::parse(s1)), s1)
+            << "not a fixed point, source:\n" << src;
+    }
+}
+
+TEST(MarkdownSerialize, SoftBreakInsideEmphasis) {
+    const Doc d = ide::render::parse("*a\\n\\- b*");
+    EXPECT_EQ(d, Doc{{P({E({T("a\n- b")})})}});
+    const std::string s = ide::render::serialize(d);
+    EXPECT_EQ(ide::render::parse(s), d);
+    EXPECT_EQ(ide::render::serialize(ide::render::parse(s)), s);
+}
+
+TEST(MarkdownSerialize, MultiLineSetextHeading) {
+    // soft breaks in heading text are only representable in setext form
+    const Doc d = ide::render::parse("a\nb\n===");
+    EXPECT_EQ(d, Doc{{H(1, {T("a\nb")})}});
+    const std::string s = ide::render::serialize(d);
+    EXPECT_EQ(ide::render::parse(s), d);
+    EXPECT_EQ(ide::render::serialize(ide::render::parse(s)), s);
+
+    const Doc d2 = ide::render::parse("a\nb\n---");
+    EXPECT_EQ(d2, Doc{{H(2, {T("a\nb")})}});
+    const std::string s2 = ide::render::serialize(d2);
+    EXPECT_EQ(ide::render::parse(s2), d2);
+    EXPECT_EQ(ide::render::serialize(ide::render::parse(s2)), s2);
+}
+
+TEST(MarkdownSerialize, InlineMathEdges) {
+    // math text with leading/trailing space only round-trips via $$
+    const Doc d = ide::render::parse("$$ x $$");
+    EXPECT_EQ(d, Doc{{P({Mt(" x ")})}});
+    const std::string s = ide::render::serialize(d);
+    EXPECT_EQ(ide::render::parse(s), d);
+    EXPECT_EQ(ide::render::serialize(ide::render::parse(s)), s);
+
+    // math never spans lines: this is literal text, and must stay stable
+    const Doc d2 = ide::render::parse("$$a\nb$$");
+    EXPECT_EQ(d2, Doc{{P({T("$$a\nb$$")})}});
+    const std::string s2 = ide::render::serialize(d2);
+    EXPECT_EQ(ide::render::parse(s2), d2);
+    EXPECT_EQ(ide::render::serialize(ide::render::parse(s2)), s2);
+}
+
 TEST(MarkdownSerialize, EmptyDoc) {
     EXPECT_EQ(ide::render::serialize(ide::render::parse("")), "");
     EXPECT_EQ(ide::render::serialize(ide::render::parse("\n\n")), "");

@@ -423,7 +423,12 @@ std::vector<Inline> parseInlines(std::string_view text, int depth) {
                 // re-parse differently) and may not be empty.
                 if (i + 2 < n && text[i + 2] != '$') {
                     const size_t close = text.find("$$", i + 2);
-                    if (close != std::string_view::npos && close > i + 2) {
+                    // Math content is emitted raw by the serializer, so it
+                    // can never be guarded against re-reading as a block
+                    // construct; inline math therefore must not span lines.
+                    const size_t nl = text.find('\n', i + 2);
+                    if (close != std::string_view::npos && close > i + 2 &&
+                        (nl == std::string_view::npos || nl > close)) {
                         flush();
                         out.push_back(Inline{InlineMath{std::string(text.substr(i + 2, close - (i + 2)))}});
                         i = close + 2;
@@ -439,11 +444,17 @@ std::vector<Inline> parseInlines(std::string_view text, int depth) {
             // right after would be swallowed as content otherwise).
             if (i + 1 < n && !isSpaceLike(text[i + 1]) && text[i + 1] != '\\') {
                 size_t j = i + 2;
+                bool crossedLine = false;
                 while (j < n) {
+                    // see the $$ branch: inline math never spans lines
+                    if (text[j] == '\n') {
+                        crossedLine = true;
+                        break;
+                    }
                     if (text[j] == '$' && !isSpaceLike(text[j - 1])) break;
                     ++j;
                 }
-                if (j < n) {
+                if (j < n && !crossedLine) {
                     flush();
                     out.push_back(Inline{InlineMath{std::string(text.substr(i + 1, j - (i + 1)))}});
                     i = j + 1;
@@ -496,8 +507,11 @@ std::vector<Inline> parseInlines(std::string_view text, int depth) {
                 while (q < n && (text[q] == ' ' || text[q] == '\t')) ++q;
                 if (q < n && text[q] == '<') {
                     size_t r = q + 1;
-                    while (r < n && text[r] != '>') ++r;
-                    if (r < n) {
+                    // A target is serialized raw (targets are never
+                    // unescaped), so it must not contain '\n': a line break
+                    // inside <...> could not be guarded on re-serialization.
+                    while (r < n && text[r] != '>' && text[r] != '\n') ++r;
+                    if (r < n && text[r] == '>') {
                         target.assign(text.substr(q + 1, r - (q + 1)));
                         q = r + 1;
                     } else {
@@ -953,9 +967,16 @@ void serializeInline(std::string& out, const Inline& node) {
                 if (pad) out += ' ';
                 out.append(fence, '`');
             } else if constexpr (std::is_same_v<T, InlineMath>) {
-                out += '$';
+                // `$$` delimiters: `$…$` cannot carry math text that starts
+                // or ends with a space or starts with a backslash (the
+                // single-$ parser rejects those), while `$$…$$` accepts
+                // every shape `parse` can produce. Parse guarantees the text
+                // is non-empty, starts with neither '$' nor '\n', does not
+                // end with '$' and contains no "$$", so the first `$$` scan
+                // on re-parse always lands on the closing delimiter.
+                out += "$$";
                 out += v.text;
-                out += '$';
+                out += "$$";
             } else if constexpr (std::is_same_v<T, Emph>) {
                 out += '*';
                 serializeInlines(out, v.children);
@@ -1018,19 +1039,22 @@ void serializeInlines(std::string& out, const std::vector<Inline>& children) {
 }
 
 /// Fenced block emitter shared by CodeBlock / MathBlock / MermaidBlock.
-/// The fence is always backticks and always longer than any backtick run
-/// inside the content, so the content can never terminate the fence early.
+/// The fence is always longer than any run of the fence character inside
+/// the content, so the content can never terminate the fence early. A
+/// backtick fence rejects info strings containing '`' (the parser only
+/// accepts those after `~~~`), so the language tag picks the fence char.
 void appendFenced(std::string& out, std::string_view lang, const std::string& code) {
+    const char fch = (lang.find('`') != std::string_view::npos) ? '~' : '`';
     size_t maxRun = 0, run = 0;
     for (char c : code) {
-        if (c == '`') {
+        if (c == fch) {
             if (++run > maxRun) maxRun = run;
         } else {
             run = 0;
         }
     }
     const size_t fence = maxRun + 3;
-    out.append(fence, '`');
+    out.append(fence, fch);
     out += lang;
     out += '\n';
     size_t start = 0;
@@ -1045,37 +1069,65 @@ void appendFenced(std::string& out, std::string_view lang, const std::string& co
         out += '\n';
         start = nl + 1;
     }
-    out.append(fence, '`');
+    out.append(fence, fch);
 }
 
-/// Paragraphs need a leading-character guard so the serialized first line
-/// cannot be re-read as a heading / quote / list / fence underline. Every
-/// guard inserts a backslash before ASCII punctuation, which the inline
-/// parser folds back, so the tree is preserved exactly.
-std::string guardParagraphStart(std::string_view s) {
-    if (s.empty()) return std::string(s);
-    const char c = s[0];
-    if (c == '#' || c == '>' || c == '=') {
-        return "\\" + std::string(s);
-    }
-    if (c == '-' || c == '+') {
-        if (s.size() == 1 || s[1] == ' ' || s[1] == '\t' || s[1] == '\n') {
-            return "\\" + std::string(s);
+/// Guards one line of serialized inline content so it cannot be re-read as
+/// a block construct when it lands on a continuation line (line 2+) of a
+/// paragraph or setext heading. The trigger mirrors the block recognizers
+/// exactly: it fires only on shapes the block parser would steal. That is
+/// also why it is safe for verbatim regions (code spans, math): their bytes
+/// were already continuation lines in the source, hence never block-shaped.
+/// Every guard inserts a backslash before ASCII punctuation, which the
+/// inline parser folds back, so the tree is preserved exactly; for digit
+/// list markers the backslash goes before the '.'/')' because a backslash
+/// before a digit does not fold.
+std::string guardLine(std::string_view line) {
+    size_t p = 0;
+    while (p < line.size() && (line[p] == ' ' || line[p] == '\t')) ++p;
+    if (p > 3 || p >= line.size()) return std::string(line);
+    std::string_view atxContent;
+    bool trigger = false;
+    size_t insertAt = p;
+    if (setextLevel(line) != 0 || isThematic(line) ||
+        parseAtx(line, &atxContent).has_value() || stripQuote(line).has_value() ||
+        parseFenceOpen(line).has_value() || parseDelimiterRow(line).has_value() ||
+        trim(line) == "$$") {
+        trigger = true;
+    } else if (auto mk = parseListMarker(line)) {
+        trigger = true;
+        if (mk->ordered) {
+            size_t d = p;
+            while (d < line.size() && isAsciiDigit(line[d])) ++d;
+            insertAt = (d < line.size()) ? d : p;
         }
     }
-    if (isAsciiDigit(c)) {
-        size_t d = 0;
-        while (d < s.size() && isAsciiDigit(s[d])) ++d;
-        if (d <= 9 && d < s.size() && (s[d] == '.' || s[d] == ')') &&
-            (s.size() == d + 1 || s[d + 1] == ' ' || s[d + 1] == '\t' || s[d + 1] == '\n')) {
-            std::string out(s.substr(0, d));
-            out += '\\';
-            out += s[d];
-            out.append(s.substr(d + 1));
-            return out;
-        }
+    if (!trigger) return std::string(line);
+    std::string out;
+    out.reserve(line.size() + 1);
+    out.append(line.substr(0, insertAt));
+    out += '\\';
+    out.append(line.substr(insertAt));
+    return out;
+}
+
+/// Applies guardLine to every line of a serialized inline run. Soft breaks
+/// survive inside Text nodes, so any line (not just the first) of a
+/// serialized paragraph can end up on a continuation position and must be
+/// guarded.
+std::string guardAllLines(std::string_view s) {
+    std::string out;
+    out.reserve(s.size() + 4);
+    size_t start = 0;
+    for (;;) {
+        const size_t nl = s.find('\n', start);
+        const size_t end = (nl == std::string_view::npos) ? s.size() : nl;
+        if (start > 0) out += '\n';
+        out += guardLine(s.substr(start, end - start));
+        if (nl == std::string_view::npos) break;
+        start = nl + 1;
     }
-    return std::string(s);
+    return out;
 }
 
 void serializeBlocks(std::string& out, const std::vector<Block>& blocks);
@@ -1087,13 +1139,26 @@ void serializeBlock(std::string& out, const Block& block) {
             if constexpr (std::is_same_v<T, ThematicBreak>) {
                 out += "---";
             } else if constexpr (std::is_same_v<T, Heading>) {
-                out.append(static_cast<size_t>(v.level), '#');
-                out += ' ';
-                serializeInlines(out, v.children);
+                std::string inner;
+                serializeInlines(inner, v.children);
+                if (v.level <= 2 && inner.find('\n') != std::string::npos) {
+                    // Soft breaks in heading text only exist in setext
+                    // headings (ATX headings are single-line); ATX form would
+                    // split the content into heading + paragraph on re-parse.
+                    // Level > 2 headings never contain '\n', so the setext
+                    // branch covers every reachable shape.
+                    out += guardAllLines(inner);
+                    out += '\n';
+                    out += (v.level == 1) ? "===" : "---";
+                } else {
+                    out.append(static_cast<size_t>(v.level), '#');
+                    out += ' ';
+                    out += inner;
+                }
             } else if constexpr (std::is_same_v<T, Paragraph>) {
                 std::string inner;
                 serializeInlines(inner, v.children);
-                out += guardParagraphStart(inner);
+                out += guardAllLines(inner);
             } else if constexpr (std::is_same_v<T, CodeBlock>) {
                 appendFenced(out, v.lang, v.code);
             } else if constexpr (std::is_same_v<T, MathBlock>) {
