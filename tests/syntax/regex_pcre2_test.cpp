@@ -144,7 +144,7 @@ TEST(Pcre2EngineTest, NamedGroupAndNamedBackref) {
     auto m = re->search("say hi hi now", 0);
     ASSERT_TRUE(m.has_value());
     EXPECT_EQ(m->begin, size_t(4));
-    EXPECT_EQ(m->end, size_t(10));
+    EXPECT_EQ(m->end, size_t(9)); // "hi hi" occupies bytes 4..8
     EXPECT_EQ(re->groupCount(), 1);
 }
 
@@ -261,10 +261,13 @@ TEST(Pcre2EngineTest, OnigDotAllFlagMTranslatedToPcreS) {
 TEST(Pcre2EngineTest, AnyCharEscapeO) {
     Pcre2RegexEngine engine;
     // \O (any character including newline) has no PCRE2 spelling; translated.
-    auto re = mustCompile(engine, "a.\\O");
-    auto m = re->search("a\n\n", 0);
+    auto re = mustCompile(engine, "a\\Ob");
+    auto m = re->search("a\nb", 0);
     ASSERT_TRUE(m.has_value());
     EXPECT_EQ(m->end, size_t(3));
+    // Plain `.` still excludes the newline.
+    auto re2 = mustCompile(engine, "a.b");
+    EXPECT_FALSE(re2->search("a\nb", 0).has_value());
 }
 
 TEST(Pcre2EngineTest, UnicodeEscapeBecomesUtf8Bytes) {
