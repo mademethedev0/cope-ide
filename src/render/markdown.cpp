@@ -746,6 +746,10 @@ void parseBlocks(std::span<const Line> lines, int depth, std::vector<Block>* out
                         }
                         break;
                     }
+                    // CommonMark: a line that is both a thematic break and a
+                    // list item (e.g. "- - -") is a thematic break, and it
+                    // ends the list instead of joining it.
+                    if (isThematic(t)) break;
                     auto mk = parseListMarker(t);
                     if (mk && mk->indent <= 3) {
                         if (mk->ordered != ordered) break;

@@ -219,7 +219,7 @@ TEST(MarkdownParse, ThematicBreaks) {
 TEST(MarkdownParse, Tables) {
     EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| 1 | 2 |").blocks[0],
               Tbl({CdCell("a"), CdCell("b")}, {Alignment::None, Alignment::None},
-                  {{CdCell("1")}, {CdCell("2")}}));
+                  {{{CdCell("1")}, {CdCell("2")}}}));
     EXPECT_EQ(ide::render::parse("| a | b |\n|:--|--:|").blocks[0],
               Tbl({CdCell("a"), CdCell("b")}, {Alignment::Left, Alignment::Right}));
     EXPECT_EQ(ide::render::parse("| a | b |\n|:-:|---|").blocks[0],
@@ -234,7 +234,7 @@ TEST(MarkdownParse, Tables) {
     // ragged rows are padded/trimmed to the column count
     EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| only |").blocks[0],
               Tbl({CdCell("a"), CdCell("b")}, {Alignment::None, Alignment::None},
-                  {{CdCell("only")}, {CdCell("")}}));
+                  {{{CdCell("only")}, {CdCell("")}}}));
     // delimiter row without a pending header is a paragraph
     {
         const Doc d = ide::render::parse("|---|---|");
