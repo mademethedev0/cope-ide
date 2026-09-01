@@ -324,13 +324,13 @@ TEST(Pcre2EngineTest, OnigPosixPropertyNamesCompileAndMatch) {
     auto neg = mustCompile(engine, "\\P{blank}+");
     auto nm = neg->search(" \ta", 0);
     ASSERT_TRUE(nm.has_value());
-    EXPECT_EQ(nm->begin, size_t(3));
-    EXPECT_EQ(nm->end, size_t(4));
+    EXPECT_EQ(nm->begin, size_t(2));
+    EXPECT_EQ(nm->end, size_t(3));
     auto caretNeg = mustCompile(engine, "\\p{^blank}+");
     auto cm = caretNeg->search(" \ta", 0);
     ASSERT_TRUE(cm.has_value());
-    EXPECT_EQ(cm->begin, size_t(3));
-    EXPECT_EQ(cm->end, size_t(4));
+    EXPECT_EQ(cm->begin, size_t(2));
+    EXPECT_EQ(cm->end, size_t(3));
 }
 
 TEST(Pcre2EngineTest, LoneBraceAfterQuantifierIsLiteral) {
