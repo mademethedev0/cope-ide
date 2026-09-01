@@ -841,6 +841,27 @@ int commandDifftest(int argc, char** argv) {
       return 1;
     }
 
+    // The point of --all is to run every grammar's OWN patterns through both
+    // engines, not to tokenize 244 JSON files with source.json. Each grammar
+    // file is therefore fed to its own grammar: route the file's extension at
+    // the grammar its JSON declares. A grammar that failed to load falls back
+    // to tier 2 identically under both engines, which the diff still covers.
+    std::string scopeLabel;
+    if (what == "--all") {
+      // Reset first: a file whose scopeName is missing must not inherit the
+      // previous iteration's mapping.
+      context.registry.mapExtension("json", "source.json");
+      const auto text = context.host.readFile(path);
+      if (text.has_value()) {
+        const auto parsed = ide::syntax::json::parse(*text);
+        const auto* scopeName = parsed.ok ? parsed.root.find("scopeName") : nullptr;
+        if (scopeName != nullptr && scopeName->isString()) {
+          scopeLabel = scopeName->string();
+          context.registry.mapExtension("json", scopeLabel);
+        }
+      }
+    }
+
     std::optional<ide::highlight::Highlighter> stdHighlighter, pcre2Highlighter;
     if (!makeHighlighter(context, *stdEngine, path, std::string(), nullptr, lines, byteSize,
                          stdHighlighter) ||
@@ -874,9 +895,10 @@ int commandDifftest(int argc, char** argv) {
     const ide::highlight::QualityReport pcre2Report =
         ide::highlight::analyzeDocument(*pcre2Highlighter, lines);
     std::printf(
-        "%s: tokens std=%zu pcre2=%zu differ=%zu repaired std=%.2f%% pcre2=%.2f%% (tier %s -> "
+        "%s%s%s: tokens std=%zu pcre2=%zu differ=%zu repaired std=%.2f%% pcre2=%.2f%% (tier %s -> "
         "%s)\n",
-        path.c_str(), stdRecords.size(), pcre2Records.size(), fileDiff,
+        path.c_str(), scopeLabel.empty() ? "" : " [", scopeLabel.c_str(),
+        scopeLabel.empty() ? "" : "]", stdRecords.size(), pcre2Records.size(), fileDiff,
         stdReport.repairRatio() * 100.0, pcre2Report.repairRatio() * 100.0,
         ide::highlight::tierName(stdReport.tier).data(),
         ide::highlight::tierName(pcre2Report.tier).data());
