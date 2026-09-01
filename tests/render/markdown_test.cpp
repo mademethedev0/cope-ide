@@ -50,6 +50,10 @@ using ide::render::ThematicBreak;
 // --- tree-building helpers (keep expectations readable) ---------------------
 
 Inline T(std::string_view s) { return Inline{Text{std::string(s)}}; }
+TableCell CdCell(std::string_view s) {
+    return s.empty() ? TableCell{} : TableCell{{T(s)}};
+}
+TableCell Cell(std::vector<Inline> v) { return TableCell{std::move(v)}; }
 Inline Cd(std::string_view s) { return Inline{Code{std::string(s)}}; }
 Inline Mt(std::string_view s) { return Inline{InlineMath{std::string(s)}}; }
 Inline E(std::vector<Inline> v) { return Inline{Emph{std::move(v)}}; }
@@ -242,12 +246,6 @@ TEST(MarkdownParse, Tables) {
               (Doc{{Block{Table{{{Cell({E({T("a")})}), Cell({Cd("b")})}},
                             {Alignment::None, Alignment::None}, {}}}}));
 }
-
-// helper used by table tests: build a TableCell from inline children
-TableCell CdCell(std::string_view s) {
-    return s.empty() ? TableCell{} : TableCell{{T(s)}};
-}
-TableCell Cell(std::vector<Inline> v) { return TableCell{std::move(v)}; }
 
 // --- inline -----------------------------------------------------------------
 
