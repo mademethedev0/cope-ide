@@ -895,7 +895,7 @@ int commandDifftest(int argc, char** argv) {
     const ide::highlight::QualityReport pcre2Report =
         ide::highlight::analyzeDocument(*pcre2Highlighter, lines);
     std::printf(
-        "%s%s%s: tokens std=%zu pcre2=%zu differ=%zu repaired std=%.2f%% pcre2=%.2f%% (tier %s -> "
+        "%s%s%s%s: tokens std=%zu pcre2=%zu differ=%zu repaired std=%.2f%% pcre2=%.2f%% (tier %s -> "
         "%s)\n",
         path.c_str(), scopeLabel.empty() ? "" : " [", scopeLabel.c_str(),
         scopeLabel.empty() ? "" : "]", stdRecords.size(), pcre2Records.size(), fileDiff,
