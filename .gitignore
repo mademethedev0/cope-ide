@@ -1,0 +1,20 @@
+build/
+.cxx/
+.gradle/
+local.properties
+*.apk
+*.aab
+.idea/
+*.iml
+cmake-build-*/
+.DS_Store
+*.log
+node_modules/
+
+# Local-only notes (device/owner details) — never commit
+docs/LOCAL.md
+/scrub-history.sh
+# No documentation in the repo — local only
+*.md
+docs/
+*.png

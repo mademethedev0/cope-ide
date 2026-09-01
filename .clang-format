@@ -1,0 +1,18 @@
+---
+BasedOnStyle: LLVM
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 120
+PointerAlignment: Left
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+# Convention (docs/CONVENTIONS.md): own header first, then std, then project.
+# NOTE: `^<ide/` must be listed before the catch-all `^<` — clang-format uses
+# the first matching regex, and it must resolve to a *later* priority block.
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<ide/'
+    Priority: 3
+  - Regex: '^<'
+    Priority: 2
