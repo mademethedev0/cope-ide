@@ -68,6 +68,17 @@ jobs:
         working-directory: build
         run: ctest --output-on-failure
 
+      # Phase 5 slice 3: differential gate. The same inputs run through
+      # std::regex and PCRE2; token differences are reported information,
+      # a pattern refused by BOTH engines fails the step. tail keeps the log
+      # bounded; pipefail keeps the exit code.
+      - name: Differential regex test (std::regex vs PCRE2)
+        if: matrix.pcre2 == 'ON'
+        working-directory: build
+        run: |
+          set -o pipefail
+          ./cli/cope_cli difftest --all | tail -50
+
       - name: Upload test logs
         if: failure()
         uses: actions/upload-artifact@v4

@@ -11,9 +11,12 @@
 //   cope_cli bench <file>   time open, then 10000 inserts and 10000 erases
 //   cope_cli hl <file> [--theme N] [--grammar X] [--lines N] [--no-color]
 //                            print the file highlighted with 24-bit ANSI color
-//   cope_cli scopes <file>  print each token's line:range and scope stack
-//   cope_cli quality <file> print the highlight quality/coverage metric
-//   cope_cli quality --all  run quality over every shipped grammar file
+//   cope_cli scopes <file> [--tier grammar|fallback] [--engine std|pcre2]
+//                            print each token's line:range and scope stack
+//   cope_cli quality <file|--all> [--engine std|pcre2]
+//                            print the highlight quality/coverage metric
+//   cope_cli difftest <file|--all>   differential run: std::regex vs PCRE2
+//                            on the same input, diffing token streams (slice 3)
 //   cope_cli grammars       list discovered grammar scope names
 //   cope_cli themes         list discovered theme names
 //
@@ -28,6 +31,10 @@
 #include <ide/syntax/grammar.h>
 #include <ide/syntax/json_lite.h>
 #include <ide/syntax/regex_factory.h>
+#include <ide/syntax/std_regex_engine.h>
+#ifdef COPE_HAS_PCRE2
+#include <ide/syntax/regex_pcre2.h>
+#endif
 #include <ide/text/document.h>
 #include <ide/theme/theme.h>
 
@@ -88,9 +95,12 @@ int usage() {
       "  bench <file>   time open + 10000 inserts + 10000 erases\n"
       "  hl <file> [--theme N] [--grammar X] [--lines N] [--no-color]\n"
       "                print the file with 24-bit ANSI highlighting\n"
-      "  scopes <file>  print line:range + scope stack for every token\n"
-      "  quality <file> print the highlight quality metric for one file\n"
-      "  quality --all  run quality over every shipped grammar file\n"
+      "  scopes <file> [--tier grammar|fallback] [--engine std|pcre2]\n"
+      "                print line:range + scope stack for every token\n"
+      "  quality <file|--all> [--engine std|pcre2]\n"
+      "                print the highlight quality metric\n"
+      "  difftest <file|--all>\n"
+      "                diff std::regex vs PCRE2 token streams (needs PCRE2 build)\n"
       "  grammars       list discovered grammar scope names\n"
       "  themes         list discovered theme names\n",
       stderr);
@@ -226,15 +236,32 @@ void applyCanonicalExtensionMap(ide::syntax::GrammarRegistry& registry) {
   }
 }
 
+/// Resolves an --engine name to a backend. nullptr when the name is unknown
+/// or names an engine this build does not contain.
+std::unique_ptr<ide::syntax::IRegexEngine> makeNamedEngine(const std::string& name) {
+  if (name == "std") {
+    return ide::syntax::makeRegexEngine(ide::syntax::RegexBackend::kStd);
+  }
+  if (name == "pcre2") {
+    return ide::syntax::makeRegexEngine(ide::syntax::RegexBackend::kPcre2);
+  }
+  return nullptr;
+}
+
 /// The engine context shared by hl / scopes / quality. One regex engine and one
 /// registry per process: pattern compiles and grammars are cached, so
 /// `quality --all` pays for each grammar once, not 244 times.
 struct EngineContext {
   ide::host::PosixHost host;
-  std::unique_ptr<ide::syntax::IRegexEngine> regexEngine = ide::syntax::makeRegexEngine();
+  std::unique_ptr<ide::syntax::IRegexEngine> regexEngine;
   ide::syntax::GrammarRegistry registry;
   std::vector<ThemeEntry> themes;
 
+  /// `engineName` empty = the default backend (PCRE2 when built in); otherwise
+  /// a forced backend for differential measurement.
+  explicit EngineContext(const std::string& engineName = std::string())
+      : regexEngine(engineName.empty() ? ide::syntax::makeRegexEngine()
+                                       : makeNamedEngine(engineName)) {}
   bool setup() {
     loadAllGrammars(host, registry);
     applyCanonicalExtensionMap(registry);
@@ -252,6 +279,25 @@ struct EngineContext {
     return themes.front().theme;
   }
 };
+
+/// Prints the real reason a requested engine is unusable. Every command that
+/// takes --engine calls this before touching the context.
+bool engineAvailable(const EngineContext& context, const std::string& engineName) {
+  if (context.regexEngine != nullptr) {
+    return true;
+  }
+  if (engineName != "std" && engineName != "pcre2") {
+    std::fprintf(stderr, "cope_cli: unknown engine '%s' (std|pcre2)\n", engineName.c_str());
+  } else {
+    std::fprintf(stderr, "cope_cli: engine '%s' is not in this build", engineName.c_str());
+#ifdef COPE_HAS_PCRE2
+    std::fputc('\n', stderr);
+#else
+    std::fputs(" (configure with -DCOPE_USE_PCRE2=ON)\n", stderr);
+#endif
+  }
+  return false;
+}
 
 /// Reads `path` through the host and splits it into Document lines.
 /// Content lines exclude their terminators: [start, end) of lineAt().
@@ -327,7 +373,8 @@ std::string sgrFor(const ide::theme::Style& style) {
 /// is why the out-param is an optional) a Highlighter for `path` over
 /// `context`, optionally overriding the grammar by scope substring. Returns
 /// false (error already printed) when the override matched nothing.
-bool makeHighlighter(EngineContext& context, const std::string& path,
+bool makeHighlighter(EngineContext& context, ide::syntax::IRegexEngine& regexEngine,
+                     const std::string& path,
                      const std::string& grammarOverride, const ide::theme::Theme* themeOverride,
                      const std::vector<std::string>& lines, size_t byteSize,
                      std::optional<ide::highlight::Highlighter>& out) {
@@ -365,7 +412,7 @@ bool makeHighlighter(EngineContext& context, const std::string& path,
   info.byteSize = byteSize;
   info.lineCount = lines.size();
 
-  out.emplace(context.registry, *context.regexEngine, theme, info);
+  out.emplace(context.registry, regexEngine, theme, info);
   std::vector<std::string_view> views(lines.begin(), lines.end());
   out->probe(views);
   return true;
@@ -483,6 +530,7 @@ int commandBench(const std::string& path) {
 int commandHl(int argc, char** argv) {
   std::string path;
   std::string grammarOverride;
+  std::string engineName;
   int themeIndex = -1;
   long lineLimit = -1;  // negative = all lines
   bool noColorFlag = false;
@@ -495,6 +543,8 @@ int commandHl(int argc, char** argv) {
       themeIndex = std::atoi(argv[++i]);
     } else if (arg == "--grammar" && i + 1 < argc) {
       grammarOverride = argv[++i];
+    } else if (arg == "--engine" && i + 1 < argc) {
+      engineName = argv[++i];
     } else if (arg == "--lines" && i + 1 < argc) {
       lineLimit = std::atol(argv[++i]);
     } else if (!arg.empty() && arg[0] != '-' && path.empty()) {
@@ -511,7 +561,10 @@ int commandHl(int argc, char** argv) {
   const bool useColor =
       !noColorFlag && std::getenv("NO_COLOR") == nullptr && ::isatty(STDOUT_FILENO) == 1;
 
-  EngineContext context;
+  EngineContext context(engineName);
+  if (!engineAvailable(context, engineName)) {
+    return 1;
+  }
   context.setup();
 
   const ide::theme::Theme* theme = nullptr;
@@ -546,7 +599,8 @@ int commandHl(int argc, char** argv) {
   }
 
   std::optional<ide::highlight::Highlighter> highlighter;
-  if (!makeHighlighter(context, path, grammarOverride, theme, lines, byteSize, highlighter)) {
+  if (!makeHighlighter(context, *context.regexEngine, path, grammarOverride, theme, lines,
+                        byteSize, highlighter)) {
     return 1;
   }
 
@@ -578,8 +632,30 @@ int commandHl(int argc, char** argv) {
   return 0;
 }
 
-int commandScopes(const std::string& path, const std::string& tierName) {
-  EngineContext context;
+int commandScopes(int argc, char** argv) {
+  std::string path;
+  std::string tierName;
+  std::string engineName;
+  for (int i = 2; i < argc; ++i) {
+    const std::string_view arg = argv[i];
+    if (arg == "--tier" && i + 1 < argc) {
+      tierName = argv[++i];
+    } else if (arg == "--engine" && i + 1 < argc) {
+      engineName = argv[++i];
+    } else if (!arg.empty() && arg[0] != '-' && path.empty()) {
+      path = std::string(arg);
+    } else {
+      return usage();
+    }
+  }
+  if (path.empty()) {
+    return usage();
+  }
+
+  EngineContext context(engineName);
+  if (!engineAvailable(context, engineName)) {
+    return 1;
+  }
   context.setup();
 
   std::vector<std::string> lines;
@@ -590,7 +666,8 @@ int commandScopes(const std::string& path, const std::string& tierName) {
   }
 
   std::optional<ide::highlight::Highlighter> highlighter;
-  if (!makeHighlighter(context, path, std::string(), nullptr, lines, byteSize, highlighter)) {
+  if (!makeHighlighter(context, *context.regexEngine, path, std::string(), nullptr, lines,
+                        byteSize, highlighter)) {
     return 1;
   }
   // --tier grammar: ignore the probe's demotion decision and inspect tier 1
@@ -638,7 +715,8 @@ int qualityForFile(EngineContext& context, const std::string& path) {
   }
 
   std::optional<ide::highlight::Highlighter> highlighter;
-  if (!makeHighlighter(context, path, std::string(), nullptr, lines, byteSize, highlighter)) {
+  if (!makeHighlighter(context, *context.regexEngine, path, std::string(), nullptr, lines,
+                        byteSize, highlighter)) {
     return 1;
   }
 
@@ -648,12 +726,26 @@ int qualityForFile(EngineContext& context, const std::string& path) {
 }
 
 int commandQuality(int argc, char** argv) {
-  if (argc != 3) {
+  std::string what;
+  std::string engineName;
+  for (int i = 2; i < argc; ++i) {
+    const std::string_view arg = argv[i];
+    if (arg == "--engine" && i + 1 < argc) {
+      engineName = argv[++i];
+    } else if (!arg.empty() && arg[0] != '-' && what.empty()) {
+      what = std::string(arg);
+    } else {
+      return usage();
+    }
+  }
+  if (what.empty()) {
     return usage();
   }
-  const std::string_view what = argv[2];
 
-  EngineContext context;
+  EngineContext context(engineName);
+  if (!engineAvailable(context, engineName)) {
+    return 1;
+  }
   if (!context.setup()) {
     std::fprintf(stderr, "cope_cli: no themes or grammars found\n");
     return 1;
@@ -669,6 +761,167 @@ int commandQuality(int argc, char** argv) {
     return failures == 0 ? 0 : 1;
   }
   return qualityForFile(context, std::string(what));
+}
+
+// ---------------------------------------------------------------------------
+// difftest: the phase-5 slice-3 differential gate. Runs the SAME input through
+// the std::regex engine and the PCRE2 engine and compares the token streams.
+// Token differences are EXPECTED and reported (they are exactly what the
+// PCRE2 upgrade fixes); what fails the run is any pattern BOTH engines
+// refuse -- std::regex rejecting ~15% of corpus patterns is the known state,
+// and PCRE2 inheriting a refusal is a regression against the phase-5 goal.
+// ---------------------------------------------------------------------------
+
+/// Tokenizes `lines` into one string per token: "line:begin-end scope stack",
+/// directly comparable across engines.
+void collectScopeRecords(ide::highlight::Highlighter& highlighter,
+                         const std::vector<std::string>& lines, std::vector<std::string>& out) {
+  ide::highlight::LineState state = highlighter.initialState();
+  std::vector<ide::highlight::ScopedSpan> scoped;
+  std::vector<std::string_view> stack;
+  std::string record;
+  for (size_t i = 0; i < lines.size(); ++i) {
+    highlighter.scopeLine(lines[i], state, scoped);
+    for (const ide::highlight::ScopedSpan& span : scoped) {
+      record = std::to_string(i);
+      record += ':';
+      record += std::to_string(span.begin);
+      record += '-';
+      record += std::to_string(span.end);
+      record += ' ';
+      stack.clear();
+      highlighter.scopeTable().resolve(span.scopes, stack);
+      for (size_t s = 0; s < stack.size(); ++s) {
+        if (s > 0) {
+          record += ' ';
+        }
+        record.append(stack[s]);
+      }
+      out.push_back(record);
+    }
+  }
+}
+
+int commandDifftest(int argc, char** argv) {
+  if (argc != 3) {
+    return usage();
+  }
+#ifndef COPE_HAS_PCRE2
+  std::fputs(
+      "cope_cli: difftest needs the PCRE2 backend; configure with "
+      "-DCOPE_USE_PCRE2=ON and rebuild\n",
+      stderr);
+  return 2;
+#else
+  const std::string what = argv[2];
+  EngineContext context;
+  if (!context.setup()) {
+    std::fprintf(stderr, "cope_cli: no themes or grammars found\n");
+    return 1;
+  }
+
+  // Two independent engines over the one shared registry. Each Highlighter
+  // owns its tokenizer and pattern cache, so nothing leaks across engines.
+  auto stdEngine = ide::syntax::makeRegexEngine(ide::syntax::RegexBackend::kStd);
+  auto pcre2Engine = ide::syntax::makeRegexEngine(ide::syntax::RegexBackend::kPcre2);
+
+  std::vector<std::string> paths;
+  if (what == "--all") {
+    paths = listJsonFiles(grammarsDir(), context.host);
+  } else {
+    paths.push_back(what);
+  }
+
+  size_t files = 0, filesDiffering = 0, tokensStd = 0, tokensPcre2 = 0, differingTokens = 0;
+  for (const std::string& path : paths) {
+    std::vector<std::string> lines;
+    size_t byteSize = 0;
+    if (!loadLines(context.host, path, lines, byteSize)) {
+      std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+      return 1;
+    }
+
+    std::optional<ide::highlight::Highlighter> stdHighlighter, pcre2Highlighter;
+    if (!makeHighlighter(context, *stdEngine, path, std::string(), nullptr, lines, byteSize,
+                         stdHighlighter) ||
+        !makeHighlighter(context, *pcre2Engine, path, std::string(), nullptr, lines, byteSize,
+                         pcre2Highlighter)) {
+      return 1;
+    }
+
+    std::vector<std::string> stdRecords, pcre2Records;
+    collectScopeRecords(*stdHighlighter, lines, stdRecords);
+    collectScopeRecords(*pcre2Highlighter, lines, pcre2Records);
+    tokensStd += stdRecords.size();
+    tokensPcre2 += pcre2Records.size();
+    size_t fileDiff = 0;
+    const size_t count = std::max(stdRecords.size(), pcre2Records.size());
+    for (size_t j = 0; j < count; ++j) {
+      if (j >= stdRecords.size() || j >= pcre2Records.size() ||
+          stdRecords[j] != pcre2Records[j]) {
+        ++fileDiff;
+      }
+    }
+    differingTokens += fileDiff;
+    if (fileDiff > 0) {
+      ++filesDiffering;
+    }
+
+    // Quality under each engine on the same lines: repaired% is the headline
+    // metric of the phase-5 upgrade (the Kotlin benchmark case).
+    const ide::highlight::QualityReport stdReport =
+        ide::highlight::analyzeDocument(*stdHighlighter, lines);
+    const ide::highlight::QualityReport pcre2Report =
+        ide::highlight::analyzeDocument(*pcre2Highlighter, lines);
+    std::printf(
+        "%s: tokens std=%zu pcre2=%zu differ=%zu repaired std=%.2f%% pcre2=%.2f%% (tier %s -> "
+        "%s)\n",
+        path.c_str(), stdRecords.size(), pcre2Records.size(), fileDiff,
+        stdReport.repairRatio() * 100.0, pcre2Report.repairRatio() * 100.0,
+        ide::highlight::tierName(stdReport.tier).data(),
+        ide::highlight::tierName(pcre2Report.tier).data());
+    ++files;
+  }
+
+  const auto& stdRejections =
+      static_cast<ide::syntax::StdRegexEngine*>(stdEngine.get())->rejections();
+  const auto& pcre2Rejections =
+      static_cast<ide::syntax::Pcre2RegexEngine*>(pcre2Engine.get())->rejections();
+  size_t recovered = 0, refusedByBoth = 0;
+  for (const auto& [pattern, reason] : stdRejections) {
+    if (pcre2Rejections.find(pattern) != pcre2Rejections.end()) {
+      ++refusedByBoth;
+    } else {
+      ++recovered;
+    }
+  }
+  const ide::syntax::RegexEngineStats stdStats = stdEngine->stats();
+  const ide::syntax::RegexEngineStats pcre2Stats = pcre2Engine->stats();
+  std::printf(
+      "files %zu (%zu differing token streams) tokens std=%zu pcre2=%zu differing=%zu\n"
+      "engine std::regex: compiled=%zu rejected=%zu lossy=%zu\n"
+      "engine pcre2:      compiled=%zu rejected=%zu\n"
+      "recovered (std refused, pcre2 compiled): %zu\n"
+      "refused by both engines: %zu\n",
+      files, filesDiffering, tokensStd, tokensPcre2, differingTokens, stdStats.compiled,
+      stdStats.rejected, stdStats.lossy, pcre2Stats.compiled, pcre2Stats.rejected, recovered,
+      refusedByBoth);
+  if (refusedByBoth > 0) {
+    size_t shown = 0;
+    for (const auto& [pattern, reason] : stdRejections) {
+      if (pcre2Rejections.find(pattern) == pcre2Rejections.end()) {
+        continue;
+      }
+      std::printf("  both refuse: %.120s -- %.120s\n", pattern.c_str(), reason.c_str());
+      if (++shown >= 20) {
+        break;
+      }
+    }
+    std::fprintf(stderr, "cope_cli: %zu pattern(s) refused by both engines\n", refusedByBoth);
+    return 1;
+  }
+  return 0;
+#endif
 }
 
 int commandList(const std::string& what) {
@@ -724,21 +977,13 @@ int main(int argc, char** argv) {
     return commandHl(argc, argv);
   }
   if (command == "scopes") {
-    // scopes <file> [--tier grammar|fallback]
-    if (argc < 3 || argc > 5) {
-      return usage();
-    }
-    std::string tierName;
-    if (argc == 5) {
-      if (std::string_view(argv[3]) != "--tier") {
-        return usage();
-      }
-      tierName = argv[4];
-    }
-    return commandScopes(argv[2], tierName);
+    return commandScopes(argc, argv);
   }
   if (command == "quality") {
     return commandQuality(argc, argv);
+  }
+  if (command == "difftest") {
+    return commandDifftest(argc, argv);
   }
   if (command == "grammars" || command == "themes") {
     if (argc != 2) {
