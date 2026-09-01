@@ -27,7 +27,7 @@
 #include <ide/highlight/quality.h>
 #include <ide/syntax/grammar.h>
 #include <ide/syntax/json_lite.h>
-#include <ide/syntax/std_regex_engine.h>
+#include <ide/syntax/regex_factory.h>
 #include <ide/text/document.h>
 #include <ide/theme/theme.h>
 
@@ -41,6 +41,7 @@
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <random>
 #include <span>
@@ -230,7 +231,7 @@ void applyCanonicalExtensionMap(ide::syntax::GrammarRegistry& registry) {
 /// `quality --all` pays for each grammar once, not 244 times.
 struct EngineContext {
   ide::host::PosixHost host;
-  ide::syntax::StdRegexEngine regexEngine;
+  std::unique_ptr<ide::syntax::IRegexEngine> regexEngine = ide::syntax::makeRegexEngine();
   ide::syntax::GrammarRegistry registry;
   std::vector<ThemeEntry> themes;
 
@@ -364,7 +365,7 @@ bool makeHighlighter(EngineContext& context, const std::string& path,
   info.byteSize = byteSize;
   info.lineCount = lines.size();
 
-  out.emplace(context.registry, context.regexEngine, theme, info);
+  out.emplace(context.registry, *context.regexEngine, theme, info);
   std::vector<std::string_view> views(lines.begin(), lines.end());
   out->probe(views);
   return true;
