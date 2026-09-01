@@ -76,7 +76,7 @@ endif()
 # Modules are added only if their CMakeLists exists; CI may configure at a
 # moment when a parallel lane has not landed yet. Missing modules warn loudly
 # instead of hard-failing configure.
-foreach(_cope_module IN ITEMS text syntax theme host highlight)
+foreach(_cope_module IN ITEMS text syntax theme host highlight render)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/${_cope_module}/CMakeLists.txt")
     add_subdirectory("src/${_cope_module}")
   else()

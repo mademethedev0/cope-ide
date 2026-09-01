@@ -40,7 +40,7 @@ target_link_libraries(cope_tests PRIVATE GTest::gtest_main cope_warnings)
 # Link whichever core modules have landed. Lanes are developed in parallel, so a
 # module may not exist yet when CI configures; linking conditionally keeps the
 # suite buildable instead of hard-failing on a missing target.
-foreach(_cope_module IN ITEMS ide_text ide_syntax ide_theme ide_host ide_highlight)
+foreach(_cope_module IN ITEMS ide_text ide_syntax ide_theme ide_host ide_highlight ide_render)
   if(TARGET ${_cope_module})
     target_link_libraries(cope_tests PRIVATE ${_cope_module})
   endif()
