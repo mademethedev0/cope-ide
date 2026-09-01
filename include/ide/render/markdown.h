@@ -239,6 +239,7 @@ struct Doc {
 struct BlockSpan {
     size_t begin = 0;
     size_t end = 0;
+    bool operator==(const BlockSpan&) const = default;
 };
 
 /// Byte ranges of the top-level blocks of `source`, in document order.
