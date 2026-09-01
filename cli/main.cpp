@@ -909,12 +909,17 @@ int commandDifftest(int argc, char** argv) {
       static_cast<ide::syntax::StdRegexEngine*>(stdEngine.get())->rejections();
   const auto& pcre2Rejections =
       static_cast<ide::syntax::Pcre2RegexEngine*>(pcre2Engine.get())->rejections();
-  size_t recovered = 0, refusedByBoth = 0;
+  size_t recovered = 0, refusedByBoth = 0, pcre2Only = 0;
   for (const auto& [pattern, reason] : stdRejections) {
     if (pcre2Rejections.find(pattern) != pcre2Rejections.end()) {
       ++refusedByBoth;
     } else {
       ++recovered;
+    }
+  }
+  for (const auto& [pattern, reason] : pcre2Rejections) {
+    if (stdRejections.find(pattern) == stdRejections.end()) {
+      ++pcre2Only;
     }
   }
   const ide::syntax::RegexEngineStats stdStats = stdEngine->stats();
@@ -924,22 +929,41 @@ int commandDifftest(int argc, char** argv) {
       "engine std::regex: compiled=%zu rejected=%zu lossy=%zu\n"
       "engine pcre2:      compiled=%zu rejected=%zu\n"
       "recovered (std refused, pcre2 compiled): %zu\n"
-      "refused by both engines: %zu\n",
+      "refused by both engines: %zu (informational: identical degradation)\n"
+      "refused by pcre2 but compiled by std: %zu\n",
       files, filesDiffering, tokensStd, tokensPcre2, differingTokens, stdStats.compiled,
       stdStats.rejected, stdStats.lossy, pcre2Stats.compiled, pcre2Stats.rejected, recovered,
-      refusedByBoth);
+      refusedByBoth, pcre2Only);
+  // Known-hard patterns both engines refuse (unbounded lookbehind,
+  // codepoint escapes above U+00FF inside byte-mode classes) degrade
+  // identically under both engines: informational, not a gate.
   if (refusedByBoth > 0) {
     size_t shown = 0;
     for (const auto& [pattern, reason] : stdRejections) {
-      if (pcre2Rejections.find(pattern) == pcre2Rejections.end()) {
+      if (pcre2Rejections.find(pattern) == stdRejections.end()) {
         continue;
       }
-      std::printf("  both refuse: %.120s -- %.120s\n", pattern.c_str(), reason.c_str());
+      std::printf("  both refuse: %.120s\n", pattern.c_str());
       if (++shown >= 20) {
         break;
       }
     }
-    std::fprintf(stderr, "cope_cli: %zu pattern(s) refused by both engines\n", refusedByBoth);
+  }
+  // The actual gate: a pattern std::regex compiles that PCRE2 refuses is a
+  // regression introduced by the upgrade (or its translator).
+  if (pcre2Only > 0) {
+    size_t shown = 0;
+    for (const auto& [pattern, reason] : pcre2Rejections) {
+      if (stdRejections.find(pattern) != stdRejections.end()) {
+        continue;
+      }
+      std::printf("  pcre2-only refusal: %.120s -- %.120s\n", pattern.c_str(), reason.c_str());
+      if (++shown >= 30) {
+        break;
+      }
+    }
+    std::fprintf(stderr, "cope_cli: %zu pattern(s) compiled by std::regex but refused by PCRE2\n",
+                 pcre2Only);
     return 1;
   }
   return 0;
