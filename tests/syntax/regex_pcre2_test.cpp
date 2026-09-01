@@ -388,6 +388,8 @@ TEST(Pcre2TranslateTest, RefusesHighCodepointInsideClass) {
     EXPECT_FALSE(reason.empty());
 }
 
+}  // namespace
+
 #else  // !COPE_HAS_PCRE2
 
 TEST(RegexFactoryTest, FallsBackToStdRegexWhenPcre2Absent) {
@@ -402,5 +404,7 @@ TEST(RegexFactoryTest, FallsBackToStdRegexWhenPcre2Absent) {
     EXPECT_EQ(m->begin, size_t(2));
     EXPECT_EQ(m->end, size_t(5));
 }
+
+}  // namespace
 
 #endif  // COPE_HAS_PCRE2

@@ -365,7 +365,9 @@ public:
           code_(code),
           jit_(jit),
           stats_(std::move(stats)) {
-        groupCount_ = static_cast<int>(pcre2_get_capture_count(code_));
+        uint32_t ncaps = 0;
+        pcre2_pattern_info(code_, PCRE2_INFO_CAPTURECOUNT, &ncaps);
+        groupCount_ = static_cast<int>(ncaps);
     }
 
     ~Pcre2Regex() override { pcre2_code_free(code_); }
