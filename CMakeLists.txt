@@ -60,10 +60,12 @@ if(COPE_USE_PCRE2)
 
   # Interface target for future consumers (src/syntax). The width is a
   # preprocessor contract: consumers must see PCRE2_CODE_UNIT_WIDTH=8 to get
-  # the pcre2_xxx_8 API from pcre2.h.
-  add_library(cope::regex_pcre2 INTERFACE)
-  target_link_libraries(cope::regex_pcre2 INTERFACE pcre2-8)
-  target_compile_definitions(cope::regex_pcre2 INTERFACE
+  # the pcre2_xxx_8 API from pcre2.h. (Real target has no "::" — that is
+  # reserved for imported/alias names in CMake.)
+  add_library(cope_regex_pcre2 INTERFACE)
+  add_library(cope::regex_pcre2 ALIAS cope_regex_pcre2)
+  target_link_libraries(cope_regex_pcre2 INTERFACE pcre2-8)
+  target_compile_definitions(cope_regex_pcre2 INTERFACE
     COPE_HAS_PCRE2=1
     PCRE2_CODE_UNIT_WIDTH=8
     PCRE2_STATIC
