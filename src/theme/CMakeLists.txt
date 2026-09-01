@@ -19,6 +19,6 @@ target_compile_features(ide_theme PUBLIC cxx_std_20)
 # PUBLIC: theme.h includes <ide/syntax/json_lite.h>, so consumers need it too.
 target_link_libraries(ide_theme PUBLIC ide_syntax)
 
-if(TARGET ember_warnings)
-    target_link_libraries(ide_theme PRIVATE ember_warnings)
+if(TARGET cope_warnings)
+    target_link_libraries(ide_theme PRIVATE cope_warnings)
 endif()

@@ -21,6 +21,6 @@ target_compile_features(ide_highlight PUBLIC cxx_std_20)
 # ide::theme::StyleId in its own API, so consumers need both headers.
 target_link_libraries(ide_highlight PUBLIC ide_syntax ide_theme)
 
-if(TARGET ember_warnings)
-    target_link_libraries(ide_highlight PRIVATE ember_warnings)
+if(TARGET cope_warnings)
+    target_link_libraries(ide_highlight PRIVATE cope_warnings)
 endif()

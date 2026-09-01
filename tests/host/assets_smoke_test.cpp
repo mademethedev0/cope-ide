@@ -78,7 +78,7 @@ TEST(AssetsSmokeTest, EveryThemeLoads) {
     std::vector<SmokeFailure> failures;
 
     for (const std::string_view sub : {"dark", "light"}) {
-        const fs::path dir = fs::path(EMBER_THEMES_DIR) / sub;
+        const fs::path dir = fs::path(COPE_THEMES_DIR) / sub;
         for (const fs::path& file : jsonFilesUnder(dir)) {
             ++total;
             const ide::syntax::json::ParseResult result = parse(slurp(file));
@@ -115,7 +115,7 @@ TEST(AssetsSmokeTest, EveryGrammarLoads) {
     size_t parsed = 0;
     std::vector<SmokeFailure> failures;
 
-    for (const fs::path& file : jsonFilesUnder(EMBER_GRAMMARS_DIR)) {
+    for (const fs::path& file : jsonFilesUnder(COPE_GRAMMARS_DIR)) {
         ++total;
         const ide::syntax::json::ParseResult result = parse(slurp(file));
         if (!result.ok) {

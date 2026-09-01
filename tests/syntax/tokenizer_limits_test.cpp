@@ -12,9 +12,9 @@
 
 namespace {
 
-using ember_test::FlatToken;
-using ember_test::Harness;
-using ember_test::Lcg;
+using cope_test::FlatToken;
+using cope_test::Harness;
+using cope_test::Lcg;
 using ide::syntax::kMaxIterationsPerLine;
 using ide::syntax::kMaxLineLength;
 using ide::syntax::kMaxStackDepth;

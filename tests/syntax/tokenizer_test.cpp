@@ -14,8 +14,8 @@
 
 namespace {
 
-using ember_test::FlatToken;
-using ember_test::Harness;
+using cope_test::FlatToken;
+using cope_test::Harness;
 using ide::syntax::GrammarId;
 using ide::syntax::GrammarRegistry;
 using ide::syntax::kInvalidGrammarId;

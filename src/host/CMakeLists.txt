@@ -13,7 +13,7 @@ add_library(ide_host STATIC
 target_include_directories(ide_host PUBLIC
     ${PROJECT_SOURCE_DIR}/include
     # PosixHost is an implementation, not engine API, so its declaration lives
-    # in src/host. Applications that inject the real filesystem (ember_cli, the
+    # in src/host. Applications that inject the real filesystem (cope_cli, the
     # Linux tests) include it as <posix_host.h>.
     ${PROJECT_SOURCE_DIR}/src/host
 )
@@ -24,6 +24,6 @@ target_compile_features(ide_host PUBLIC cxx_std_20)
 # need ide_text's headers.
 target_link_libraries(ide_host PUBLIC ide_text)
 
-if(TARGET ember_warnings)
-    target_link_libraries(ide_host PRIVATE ember_warnings)
+if(TARGET cope_warnings)
+    target_link_libraries(ide_host PRIVATE cope_warnings)
 endif()

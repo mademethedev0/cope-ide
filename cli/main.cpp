@@ -1,4 +1,4 @@
-// ember_cli -- development harness for the text engine.
+// cope_cli -- development harness for the text engine.
 //
 // This is NOT shipped and NOT part of core/: it is allowed to touch the real
 // filesystem precisely so that core/ never has to. It exists to prove
@@ -6,16 +6,16 @@
 // 3b - to render syntax highlighting in the terminal, which is the first
 // visible payoff of the whole engine.
 //
-//   ember_cli cat   <file>   print the file back through Document, line by line
-//   ember_cli lines <file>   print line count and byte size
-//   ember_cli bench <file>   time open, then 10000 inserts and 10000 erases
-//   ember_cli hl <file> [--theme N] [--grammar X] [--lines N] [--no-color]
+//   cope_cli cat   <file>   print the file back through Document, line by line
+//   cope_cli lines <file>   print line count and byte size
+//   cope_cli bench <file>   time open, then 10000 inserts and 10000 erases
+//   cope_cli hl <file> [--theme N] [--grammar X] [--lines N] [--no-color]
 //                            print the file highlighted with 24-bit ANSI color
-//   ember_cli scopes <file>  print each token's line:range and scope stack
-//   ember_cli quality <file> print the highlight quality/coverage metric
-//   ember_cli quality --all  run quality over every shipped grammar file
-//   ember_cli grammars       list discovered grammar scope names
-//   ember_cli themes         list discovered theme names
+//   cope_cli scopes <file>  print each token's line:range and scope stack
+//   cope_cli quality <file> print the highlight quality/coverage metric
+//   cope_cli quality --all  run quality over every shipped grammar file
+//   cope_cli grammars       list discovered grammar scope names
+//   cope_cli themes         list discovered theme names
 //
 // The old commands read via std::ifstream (kept as-is); every new command goes
 // through ide::host::PosixHost, which is the point of phase 3b: proving the
@@ -81,7 +81,7 @@ bool readWholeFile(const std::string& path, std::string& out) {
 
 int usage() {
   std::fputs(
-      "usage: ember_cli <command> [args]\n"
+      "usage: cope_cli <command> [args]\n"
       "  cat   <file>   round-trip the file through Document, line by line\n"
       "  lines <file>   print line count and byte size\n"
       "  bench <file>   time open + 10000 inserts + 10000 erases\n"
@@ -101,22 +101,22 @@ int usage() {
 //
 // Asset roots are compile definitions by default, so a moved asset tree is a
 // build error rather than a silent empty listing. Env overrides
-// (EMBER_THEMES_DIR / EMBER_GRAMMARS_DIR) win at runtime, so a binary can
+// (COPE_THEMES_DIR / COPE_GRAMMARS_DIR) win at runtime, so a binary can
 // point at any checkout (e.g. a phone-side copy) without rebuilding.
 // ---------------------------------------------------------------------------
 
 std::string themesDir() {
-  if (const char* env = std::getenv("EMBER_THEMES_DIR")) {
+  if (const char* env = std::getenv("COPE_THEMES_DIR")) {
     return std::string(env);
   }
-  return std::string(EMBER_THEMES_DIR);
+  return std::string(COPE_THEMES_DIR);
 }
 
 std::string grammarsDir() {
-  if (const char* env = std::getenv("EMBER_GRAMMARS_DIR")) {
+  if (const char* env = std::getenv("COPE_GRAMMARS_DIR")) {
     return std::string(env);
   }
-  return std::string(EMBER_GRAMMARS_DIR);
+  return std::string(COPE_GRAMMARS_DIR);
 }
 
 /// One loaded theme plus the file it came from, for sorted listings.
@@ -331,7 +331,7 @@ bool makeHighlighter(EngineContext& context, const std::string& path,
                      const std::vector<std::string>& lines, size_t byteSize,
                      std::optional<ide::highlight::Highlighter>& out) {
   if (context.themes.empty()) {
-    std::fprintf(stderr, "ember_cli: no themes found\n");
+    std::fprintf(stderr, "cope_cli: no themes found\n");
     return false;
   }
   if (!grammarOverride.empty()) {
@@ -348,7 +348,7 @@ bool makeHighlighter(EngineContext& context, const std::string& path,
       }
     }
     if (match == nullptr) {
-      std::fprintf(stderr, "ember_cli: no grammar scope matches '%s'\n", grammarOverride.c_str());
+      std::fprintf(stderr, "cope_cli: no grammar scope matches '%s'\n", grammarOverride.c_str());
       return false;
     }
     // Route the file's extension at the chosen grammar.
@@ -377,7 +377,7 @@ bool makeHighlighter(EngineContext& context, const std::string& path,
 int commandCat(const std::string& path) {
   std::string bytes;
   if (!readWholeFile(path, bytes)) {
-    std::fprintf(stderr, "ember_cli: cannot read %s\n", path.c_str());
+    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
     return 1;
   }
   const ide::text::Document document(std::move(bytes));
@@ -403,7 +403,7 @@ int commandCat(const std::string& path) {
 int commandLines(const std::string& path) {
   std::string bytes;
   if (!readWholeFile(path, bytes)) {
-    std::fprintf(stderr, "ember_cli: cannot read %s\n", path.c_str());
+    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
     return 1;
   }
   const ide::text::Document document(std::move(bytes));
@@ -418,7 +418,7 @@ int commandBench(const std::string& path) {
   const Clock::time_point readStart = Clock::now();
   std::string bytes;
   if (!readWholeFile(path, bytes)) {
-    std::fprintf(stderr, "ember_cli: cannot read %s\n", path.c_str());
+    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
     return 1;
   }
   const double readMs = millisSince(readStart);
@@ -516,20 +516,20 @@ int commandHl(int argc, char** argv) {
   const ide::theme::Theme* theme = nullptr;
   if (themeIndex >= 0) {
     if (static_cast<size_t>(themeIndex) >= context.themes.size()) {
-      std::fprintf(stderr, "ember_cli: theme index %d out of range (0..%zu)\n", themeIndex,
+      std::fprintf(stderr, "cope_cli: theme index %d out of range (0..%zu)\n", themeIndex,
                    context.themes.size() == 0 ? 0u : context.themes.size() - 1u);
       return 1;
     }
     theme = &context.themes[static_cast<size_t>(themeIndex)].theme;
   } else if (context.themes.empty()) {
-    std::fprintf(stderr, "ember_cli: no themes found\n");
+    std::fprintf(stderr, "cope_cli: no themes found\n");
     return 1;
   }
 
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
-    std::fprintf(stderr, "ember_cli: cannot read %s\n", path.c_str());
+    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
     return 1;
   }
 
@@ -584,7 +584,7 @@ int commandScopes(const std::string& path, const std::string& tierName) {
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
-    std::fprintf(stderr, "ember_cli: cannot read %s\n", path.c_str());
+    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
     return 1;
   }
 
@@ -599,7 +599,7 @@ int commandScopes(const std::string& path, const std::string& tierName) {
   } else if (tierName == "fallback") {
     highlighter->forceTier(ide::highlight::Tier::kFallback);
   } else if (!tierName.empty()) {
-    std::fprintf(stderr, "ember_cli: unknown tier '%s' (grammar|fallback)\n", tierName.c_str());
+    std::fprintf(stderr, "cope_cli: unknown tier '%s' (grammar|fallback)\n", tierName.c_str());
     return 1;
   }
 
@@ -632,7 +632,7 @@ int qualityForFile(EngineContext& context, const std::string& path) {
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
-    std::fprintf(stderr, "ember_cli: cannot read %s\n", path.c_str());
+    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
     return 1;
   }
 
@@ -654,7 +654,7 @@ int commandQuality(int argc, char** argv) {
 
   EngineContext context;
   if (!context.setup()) {
-    std::fprintf(stderr, "ember_cli: no themes or grammars found\n");
+    std::fprintf(stderr, "cope_cli: no themes or grammars found\n");
     return 1;
   }
 
@@ -745,7 +745,7 @@ int main(int argc, char** argv) {
     }
     return commandList(command);
   }
-  // Convenience: `ember_cli <file> [flags...]` means `ember_cli hl <file> ...`.
+  // Convenience: `cope_cli <file> [flags...]` means `cope_cli hl <file> ...`.
   // commandHl parses from argv[2], so rebuild the argument vector with "hl"
   // inserted in front.
   static char hlCommand[] = "hl";

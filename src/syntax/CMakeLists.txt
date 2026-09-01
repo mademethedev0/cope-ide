@@ -15,6 +15,6 @@ add_library(ide_syntax STATIC
 target_include_directories(ide_syntax PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_compile_features(ide_syntax PUBLIC cxx_std_20)
 
-if(TARGET ember_warnings)
-    target_link_libraries(ide_syntax PRIVATE ember_warnings)
+if(TARGET cope_warnings)
+    target_link_libraries(ide_syntax PRIVATE cope_warnings)
 endif()

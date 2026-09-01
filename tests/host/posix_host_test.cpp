@@ -1,7 +1,7 @@
 // The ONE test allowed to touch the real filesystem. It only ever reads and
 // writes fixed filenames in the test's working directory (the build dir):
-//   ember_posix_host_test.tmp      round-trip target
-//   ember_posix_host_test.empty    the zero-length mmap special case
+//   cope_posix_host_test.tmp      round-trip target
+//   cope_posix_host_test.empty    the zero-length mmap special case
 // Everything else (missing file, directory-as-file, readDir dot entries) is
 // probed against the same two files and the working directory itself.
 
@@ -14,8 +14,8 @@
 
 namespace {
 
-const char* const kTempFile = "ember_posix_host_test.tmp";
-const char* const kEmptyFile = "ember_posix_host_test.empty";
+const char* const kTempFile = "cope_posix_host_test.tmp";
+const char* const kEmptyFile = "cope_posix_host_test.empty";
 
 }  // namespace
 
@@ -65,9 +65,9 @@ TEST(PosixHostTest, RealFilesystemRoundTrip) {
     EXPECT_EQ(*secondRead, second);
 
     // --- missing file ---------------------------------------------------------
-    EXPECT_FALSE(host.readFile("ember_posix_host_test.does-not-exist").has_value());
-    EXPECT_EQ(host.mapFile("ember_posix_host_test.does-not-exist"), nullptr);
-    EXPECT_FALSE(host.stat("ember_posix_host_test.does-not-exist").has_value());
+    EXPECT_FALSE(host.readFile("cope_posix_host_test.does-not-exist").has_value());
+    EXPECT_EQ(host.mapFile("cope_posix_host_test.does-not-exist"), nullptr);
+    EXPECT_FALSE(host.stat("cope_posix_host_test.does-not-exist").has_value());
 
     // --- directory passed where a file is expected ----------------------------
     const auto dirInfo = host.stat(".");
@@ -93,11 +93,11 @@ TEST(PosixHostTest, RealFilesystemRoundTrip) {
     EXPECT_TRUE(sawEmpty);
 
     // --- readDir on a missing directory: empty, not a crash -------------------
-    EXPECT_TRUE(host.readDir("ember_posix_host_test.no-such-dir").empty());
+    EXPECT_TRUE(host.readDir("cope_posix_host_test.no-such-dir").empty());
 
     // Cleanup; failures here are cosmetic, not test failures.
     std::remove(kTempFile);
     std::remove(kEmptyFile);
-    std::remove((std::string(kTempFile) + ".tmp-ember").c_str());
-    std::remove((std::string(kEmptyFile) + ".tmp-ember").c_str());
+    std::remove((std::string(kTempFile) + ".tmp-cope").c_str());
+    std::remove((std::string(kEmptyFile) + ".tmp-cope").c_str());
 }

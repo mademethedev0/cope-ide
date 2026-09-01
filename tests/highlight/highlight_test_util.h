@@ -22,7 +22,7 @@
 #include <ide/syntax/std_regex_engine.h>
 #include <ide/theme/theme.h>
 
-namespace ember_highlight_test {
+namespace cope_highlight_test {
 
 using ide::highlight::FallbackSpan;
 using ide::highlight::FallbackState;
@@ -38,7 +38,7 @@ using ide::highlight::Tier;
 /// the palette interns by visual equality, so duplicate colours would silently
 /// break the "distinct styles" assertions.
 inline constexpr std::string_view kTestThemeJson = R"json({
-  "name": "ember-test",
+  "name": "cope-test",
   "type": "dark",
   "colors": { "editor.foreground": "#C0C0C0", "editor.background": "#101010" },
   "tokenColors": [
@@ -64,7 +64,7 @@ inline constexpr std::string_view kTestThemeJson = R"json({
 /// default style. Used to prove the quality report notices a theme that is
 /// effectively not working.
 inline constexpr std::string_view kPoorThemeJson = R"json({
-  "name": "ember-test-poor",
+  "name": "cope-test-poor",
   "type": "dark",
   "colors": { "editor.foreground": "#C0C0C0" },
   "tokenColors": [
@@ -75,7 +75,7 @@ inline constexpr std::string_view kPoorThemeJson = R"json({
 /// Same scopes as kTestThemeJson, different colours: proves a theme swap changes
 /// StyleIds without any retokenization.
 inline constexpr std::string_view kAltThemeJson = R"json({
-  "name": "ember-test-alt",
+  "name": "cope-test-alt",
   "type": "light",
   "colors": { "editor.foreground": "#202020", "editor.background": "#FFFFFF" },
   "tokenColors": [
@@ -280,4 +280,4 @@ private:
     std::optional<Highlighter> highlighter_;
 };
 
-}  // namespace ember_highlight_test
+}  // namespace cope_highlight_test

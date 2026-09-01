@@ -11,8 +11,8 @@
 
 namespace {
 
-using ember_highlight_test::Config;
-using ember_highlight_test::Harness;
+using cope_highlight_test::Config;
+using cope_highlight_test::Harness;
 using ide::highlight::analyzeDocument;
 using ide::highlight::analyzeLines;
 using ide::highlight::formatQualityReport;
@@ -122,7 +122,7 @@ TEST(HighlightQualityTest, RepairLiftsCoverageButFlagsTheGrammar) {
 TEST(HighlightQualityTest, AThemeThatDoesNotWorkShowsUpAsTooFewStyles) {
     Config config;
     config.fileName = "a.c";  // tier 2: scopes are produced for everything
-    config.themeJson = ember_highlight_test::kPoorThemeJson;
+    config.themeJson = cope_highlight_test::kPoorThemeJson;
     Harness harness(config);
 
     const std::vector<std::string_view> lines = fixture();
@@ -142,7 +142,7 @@ TEST(HighlightQualityTest, AThemeThatDoesNotWorkShowsUpAsTooFewStyles) {
 TEST(HighlightQualityTest, AShortFileIsNotJudgedOnStyleVariety) {
     Config config;
     config.fileName = "a.c";
-    config.themeJson = ember_highlight_test::kPoorThemeJson;
+    config.themeJson = cope_highlight_test::kPoorThemeJson;
     Harness harness(config);
 
     const std::vector<std::string_view> lines(5, kFixtureLine);

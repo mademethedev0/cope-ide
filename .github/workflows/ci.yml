@@ -50,8 +50,8 @@ jobs:
         run: >
           cmake -G Ninja -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DEMBER_BUILD_CLI=ON
-          -DEMBER_BUILD_TESTS=ON
+          -DCOPE_BUILD_CLI=ON
+          -DCOPE_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build

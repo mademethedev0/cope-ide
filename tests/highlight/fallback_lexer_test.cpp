@@ -10,10 +10,10 @@
 
 namespace {
 
-using ember_highlight_test::hasExactSpan;
-using ember_highlight_test::scopeAt;
-using ember_highlight_test::scopeOf;
-using ember_highlight_test::tiles;
+using cope_highlight_test::hasExactSpan;
+using cope_highlight_test::scopeAt;
+using cope_highlight_test::scopeOf;
+using cope_highlight_test::tiles;
 using ide::highlight::FallbackLexer;
 using ide::highlight::FallbackSpan;
 using ide::highlight::FallbackState;

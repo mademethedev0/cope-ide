@@ -13,9 +13,9 @@
 
 namespace {
 
-using ember_highlight_test::Config;
-using ember_highlight_test::Harness;
-using ember_highlight_test::tiles;
+using cope_highlight_test::Config;
+using cope_highlight_test::Harness;
+using cope_highlight_test::tiles;
 using ide::highlight::BatchResult;
 using ide::highlight::CarryMode;
 using ide::highlight::LineState;
@@ -263,7 +263,7 @@ TEST(HighlighterThemeTest, SwappingTheThemeRestylesWithoutRetokenizing) {
     ASSERT_FALSE(before.empty());
     const Style beforeStyle = harness.h().theme().styleAt(before.front().style);
 
-    Theme alternative = loadTheme(ember_highlight_test::kAltThemeJson);
+    Theme alternative = loadTheme(cope_highlight_test::kAltThemeJson);
     harness.h().setTheme(alternative);
 
     std::vector<StyledSpan> after;

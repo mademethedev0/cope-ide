@@ -24,10 +24,10 @@
 
 namespace {
 
-using ember_highlight_test::Config;
-using ember_highlight_test::Harness;
-using ember_highlight_test::Lcg;
-using ember_highlight_test::tiles;
+using cope_highlight_test::Config;
+using cope_highlight_test::Harness;
+using cope_highlight_test::Lcg;
+using cope_highlight_test::tiles;
 using ide::highlight::FallbackLexer;
 using ide::highlight::FallbackSpan;
 using ide::highlight::FallbackState;

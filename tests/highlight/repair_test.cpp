@@ -16,10 +16,10 @@
 
 namespace {
 
-using ember_highlight_test::Config;
-using ember_highlight_test::FlatSpan;
-using ember_highlight_test::Harness;
-using ember_highlight_test::tiles;
+using cope_highlight_test::Config;
+using cope_highlight_test::FlatSpan;
+using cope_highlight_test::Harness;
+using cope_highlight_test::tiles;
 using ide::highlight::ScopedSpan;
 using ide::highlight::Tier;
 

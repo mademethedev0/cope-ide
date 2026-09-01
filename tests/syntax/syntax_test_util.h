@@ -18,7 +18,7 @@
 #include <ide/syntax/std_regex_engine.h>
 #include <ide/syntax/tokenizer.h>
 
-namespace ember_test {
+namespace cope_test {
 
 /// A token with its interned scope stack resolved back to text, so a failure
 /// reads `[3,6) "source.t meta.tag"` instead of an opaque integer id.
@@ -114,4 +114,4 @@ private:
     uint64_t state_ = 0;
 };
 
-}  // namespace ember_test
+}  // namespace cope_test

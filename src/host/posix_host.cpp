@@ -130,7 +130,7 @@ std::optional<std::string> PosixHost::readFile(std::string_view path) {
 
 bool PosixHost::writeFile(std::string_view path, std::string_view data) {
     const std::string p = cPath(path);
-    const std::string tmp = p + ".tmp-ember";
+    const std::string tmp = p + ".tmp-cope";
 
     const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd < 0) {

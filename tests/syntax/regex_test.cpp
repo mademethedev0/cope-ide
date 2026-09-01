@@ -24,7 +24,7 @@ using ide::syntax::PatternTranslation;
 using ide::syntax::RegexEngineCaps;
 using ide::syntax::StdRegexEngine;
 using ide::syntax::translateOnigToEcma;
-using ember_test::Lcg;
+using cope_test::Lcg;
 
 // ---------------------------------------------------------------------------
 // escapeRegexLiteral

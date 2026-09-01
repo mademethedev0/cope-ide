@@ -10,7 +10,7 @@
 
 namespace {
 
-using ember_highlight_test::tiles;
+using cope_highlight_test::tiles;
 using ide::highlight::CarryMode;
 using ide::highlight::FallbackLexer;
 using ide::highlight::FallbackSpan;
@@ -52,7 +52,7 @@ TEST(FallbackStateTest, BlockCommentSpansThreeLines) {
     std::vector<FallbackSpan> spans = lexer.lexLine(first, state);
     ASSERT_TRUE(tiles(spans, first.size()));
     EXPECT_EQ(state.mode, CarryMode::kBlockComment);
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, first, "/* start", "comment.block"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, first, "/* start", "comment.block"));
 
     const FallbackState afterFirst = state;
 
@@ -68,8 +68,8 @@ TEST(FallbackStateTest, BlockCommentSpansThreeLines) {
     spans = lexer.lexLine(third, state);
     ASSERT_TRUE(tiles(spans, third.size()));
     EXPECT_TRUE(state.clean());
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, third, "end */", "comment.block"));
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, third, "y", "variable.other"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, third, "end */", "comment.block"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, third, "y", "variable.other"));
 }
 
 TEST(FallbackStateTest, EmptyLineInsideABlockCommentKeepsItOpen) {
@@ -98,8 +98,8 @@ TEST(FallbackStateTest, CommentCloserAtTheVeryStartOfALine) {
     const std::vector<FallbackSpan> spans = lexer.lexLine(line, state);
     ASSERT_TRUE(tiles(spans, line.size()));
     EXPECT_TRUE(state.clean());
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, line, "*/", "comment.block"));
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, line, "int", "storage.type"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, line, "*/", "comment.block"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, line, "int", "storage.type"));
 }
 
 // --- multi-line strings ------------------------------------------------------
@@ -125,9 +125,9 @@ TEST(FallbackStateTest, TripleQuotedStringSpansLines) {
     spans = lexer.lexLine(third, state);
     ASSERT_TRUE(tiles(spans, third.size()));
     EXPECT_TRUE(state.clean());
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, third, "text",
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, third, "text",
                                                    "string.quoted.other"));
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, third, "y", "variable.other"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, third, "y", "variable.other"));
 }
 
 TEST(FallbackStateTest, RawTripleQuotedStringCarriesTheRawFlag) {
@@ -180,7 +180,7 @@ TEST(FallbackStateTest, CppRawStringSpansLines) {
     spans = lexer.lexLine(second, state);
     ASSERT_TRUE(tiles(spans, second.size()));
     EXPECT_TRUE(state.clean());
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, second, "def",
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, second, "def",
                                                    "string.quoted.other"));
 }
 
@@ -196,7 +196,7 @@ TEST(FallbackStateTest, UnterminatedSingleLineStringDoesNotCarry) {
     const std::string_view second = "int y = 1;";
     const std::vector<FallbackSpan> next = lexer.lexLine(second, state);
     ASSERT_TRUE(tiles(next, second.size()));
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(next, second, "int", "storage.type"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(next, second, "int", "storage.type"));
 }
 
 // --- defensive ---------------------------------------------------------------
@@ -212,7 +212,7 @@ TEST(FallbackStateTest, StaleDelimiterIndexRecoversInsteadOfHanging) {
         FallbackLexer(ide::highlight::shellProfile()).lexLine(line, state);
     ASSERT_TRUE(tiles(spans, line.size()));
     EXPECT_TRUE(state.clean());
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, line, "echo", "storage.type"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, line, "echo", "storage.type"));
 }
 
 TEST(FallbackStateTest, StaleStringDelimiterIndexRecovers) {
@@ -224,7 +224,7 @@ TEST(FallbackStateTest, StaleStringDelimiterIndexRecovers) {
         FallbackLexer(ide::highlight::cFamilyProfile()).lexLine(line, state);
     ASSERT_TRUE(tiles(spans, line.size()));
     EXPECT_TRUE(state.clean());
-    EXPECT_TRUE(ember_highlight_test::hasExactSpan(spans, line, "int", "storage.type"));
+    EXPECT_TRUE(cope_highlight_test::hasExactSpan(spans, line, "int", "storage.type"));
 }
 
 }  // namespace

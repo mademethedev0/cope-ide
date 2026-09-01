@@ -3,7 +3,7 @@
 // Why this file exists
 // -------------------
 // The real-filesystem Host: open/read/fstat/opendir/mmap, nothing else. It is
-// the concrete IO boundary behind ember_cli and the Linux tests, and the
+// the concrete IO boundary behind cope_cli and the Linux tests, and the
 // reference a future Android (SAF/JNI) Host must behave like.
 //
 // It lives in src/ (not include/ide/) on purpose: hosts are an implementation

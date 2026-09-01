@@ -12,7 +12,7 @@
 namespace {
 
 namespace json = ide::syntax::json;
-using ember_test::Lcg;
+using cope_test::Lcg;
 
 // --- accessors and builders -------------------------------------------------
 
