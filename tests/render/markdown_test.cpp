@@ -54,6 +54,11 @@ TableCell CdCell(std::string_view s) {
     return s.empty() ? TableCell{} : TableCell{{T(s)}};
 }
 TableCell Cell(std::vector<Inline> v) { return TableCell{std::move(v)}; }
+// Build a Table block without deep nested braces in EXPECT macros.
+Block Tbl(std::vector<TableCell> header, std::vector<Alignment> align,
+          std::vector<std::vector<TableCell>> rows = {}) {
+    return Block{Table{std::move(header), std::move(align), std::move(rows)}};
+}
 Inline Cd(std::string_view s) { return Inline{Code{std::string(s)}}; }
 Inline Mt(std::string_view s) { return Inline{InlineMath{std::string(s)}}; }
 Inline E(std::vector<Inline> v) { return Inline{Emph{std::move(v)}}; }
@@ -212,18 +217,14 @@ TEST(MarkdownParse, ThematicBreaks) {
 }
 
 TEST(MarkdownParse, Tables) {
-    EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| 1 | 2 |"),
-              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
-                            {Alignment::None, Alignment::None},
-                            {{{CdCell("1")}, {CdCell("2")}}}}}}));
-    EXPECT_EQ(ide::render::parse("| a | b |\n|:--|--:|"),
-              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
-                            {Alignment::Left, Alignment::Right},
-                            {}}}}));
-    EXPECT_EQ(ide::render::parse("| a | b |\n|:-:|---|"),
-              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
-                            {Alignment::Center, Alignment::None},
-                            {}}}}));
+    EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| 1 | 2 |").blocks[0],
+              Tbl({CdCell("a"), CdCell("b")}, {Alignment::None, Alignment::None},
+                  {{CdCell("1")}, {CdCell("2")}}));
+    EXPECT_EQ(ide::render::parse("| a | b |\n|:--|--:|").blocks[0],
+              Tbl({CdCell("a"), CdCell("b")}, {Alignment::Left, Alignment::Right}));
+    EXPECT_EQ(ide::render::parse("| a | b |\n|:-:|---|").blocks[0],
+              Tbl({CdCell("a"), CdCell("b")},
+                  {Alignment::Center, Alignment::None}));
     // no pipes in header -> not a table
     {
         const Doc d = ide::render::parse("plain\n---|---");
@@ -231,10 +232,9 @@ TEST(MarkdownParse, Tables) {
         EXPECT_TRUE(std::holds_alternative<Paragraph>(d.blocks[0].node));
     }
     // ragged rows are padded/trimmed to the column count
-    EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| only |"),
-              (Doc{{Block{Table{{{CdCell("a"), CdCell("b")}},
-                            {Alignment::None, Alignment::None},
-                            {{{CdCell("only")}, {CdCell("")}}}}}}));
+    EXPECT_EQ(ide::render::parse("| a | b |\n|---|---|\n| only |").blocks[0],
+              Tbl({CdCell("a"), CdCell("b")}, {Alignment::None, Alignment::None},
+                  {{CdCell("only")}, {CdCell("")}}));
     // delimiter row without a pending header is a paragraph
     {
         const Doc d = ide::render::parse("|---|---|");
@@ -242,9 +242,9 @@ TEST(MarkdownParse, Tables) {
         EXPECT_TRUE(std::holds_alternative<Paragraph>(d.blocks[0].node));
     }
     // inline content in cells
-    EXPECT_EQ(ide::render::parse("| *a* | `b` |\n|---|---|"),
-              (Doc{{Block{Table{{{Cell({E({T("a")})}), Cell({Cd("b")})}},
-                            {Alignment::None, Alignment::None}, {}}}}));
+    EXPECT_EQ(ide::render::parse("| *a* | `b` |\n|---|---|").blocks[0],
+              Tbl({Cell({E({T("a")})}), Cell({Cd("b")})},
+                  {Alignment::None, Alignment::None}));
 }
 
 // --- inline -----------------------------------------------------------------
