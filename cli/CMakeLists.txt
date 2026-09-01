@@ -12,6 +12,7 @@ target_compile_definitions(cope_cli PRIVATE
     # build facts, not runtime guesses.
     COPE_THEMES_DIR="${PROJECT_SOURCE_DIR}/textmate/themes"
     COPE_GRAMMARS_DIR="${PROJECT_SOURCE_DIR}/textmate/grammars"
+    COPE_VERSION="${PROJECT_VERSION}"
 )
 
 target_link_libraries(cope_cli PRIVATE

@@ -19,6 +19,8 @@
 //                            on the same input, diffing token streams (slice 3)
 //   cope_cli grammars       list discovered grammar scope names
 //   cope_cli themes         list discovered theme names
+//   cope_cli help           full command and flag reference
+//   cope_cli version        build facts: version, regex backends, asset dirs
 //
 // The old commands read via std::ifstream (kept as-is); every new command goes
 // through ide::host::PosixHost, which is the point of phase 3b: proving the
@@ -66,6 +68,42 @@ double millisSince(Clock::time_point start) {
          1.0e6;
 }
 
+// ---------------------------------------------------------------------------
+// Terminal styling. One detection point per stream: color is on only when
+// that stream is a tty, NO_COLOR is unset, and TERM is neither empty nor
+// "dumb". Every helper returns "" when off, so piped output and CI logs see
+// exactly the plain text they always saw.
+// ---------------------------------------------------------------------------
+
+struct CliStyle {
+  bool on = false;
+
+  explicit CliStyle(int fd) {
+    const char* term = std::getenv("TERM");
+    if (::isatty(fd) == 1 && std::getenv("NO_COLOR") == nullptr && term != nullptr &&
+        *term != '\0' && std::string_view(term) != "dumb") {
+      on = true;
+    }
+  }
+
+  const char* dim() const { return on ? "\033[2m" : ""; }
+  const char* bold() const { return on ? "\033[1m" : ""; }
+  const char* red() const { return on ? "\033[31m" : ""; }
+  const char* green() const { return on ? "\033[32m" : ""; }
+  const char* yellow() const { return on ? "\033[33m" : ""; }
+  const char* reset() const { return on ? "\033[0m" : ""; }
+};
+
+const CliStyle outStyle(STDOUT_FILENO);
+const CliStyle errStyle(STDERR_FILENO);
+
+/// All error output goes through here: red prefix on a tty, plain otherwise.
+/// The message always states the real reason and the real action.
+void cliError(const std::string& message) {
+  std::fprintf(stderr, "%s%s%s %s\n", errStyle.red(), "cope_cli:", errStyle.reset(),
+               message.c_str());
+}
+
 bool readWholeFile(const std::string& path, std::string& out) {
   std::ifstream in(path, std::ios::binary);
   if (!in) {
@@ -87,23 +125,44 @@ bool readWholeFile(const std::string& path, std::string& out) {
   return true;
 }
 
-int usage() {
+/// Full command reference. `help` prints this to stdout and exits 0; error
+/// paths print the one-line hint from usage() to stderr and exit 2.
+void printHelp(std::FILE* out) {
   std::fputs(
       "usage: cope_cli <command> [args]\n"
-      "  cat   <file>   round-trip the file through Document, line by line\n"
-      "  lines <file>   print line count and byte size\n"
-      "  bench <file>   time open + 10000 inserts + 10000 erases\n"
-      "  hl <file> [--theme N] [--grammar X] [--lines N] [--no-color]\n"
-      "                print the file with 24-bit ANSI highlighting\n"
-      "  scopes <file> [--tier grammar|fallback] [--engine std|pcre2]\n"
-      "                print line:range + scope stack for every token\n"
-      "  quality <file|--all> [--engine std|pcre2]\n"
-      "                print the highlight quality metric\n"
-      "  difftest <file|--all>\n"
-      "                diff std::regex vs PCRE2 token streams (needs PCRE2 build)\n"
-      "  grammars       list discovered grammar scope names\n"
-      "  themes         list discovered theme names\n",
-      stderr);
+      "\n"
+      "buffer:\n"
+      "  cat <file>              round-trip the file through Document, line by line\n"
+      "  lines <file>            print line count and byte size\n"
+      "  bench <file>            time open + 10000 inserts + 10000 erases\n"
+      "\n"
+      "highlighting:\n"
+      "  hl <file>               print the file with 24-bit ANSI highlighting\n"
+      "  scopes <file>           print line:range + scope stack for every token\n"
+      "  quality <file|--all>    print the highlight quality metric\n"
+      "  difftest <file|--all>   diff std::regex vs PCRE2 token streams (PCRE2 build)\n"
+      "\n"
+      "assets:\n"
+      "  grammars                list discovered grammar scope names\n"
+      "  themes                  list discovered theme names\n"
+      "\n"
+      "  help                    this text\n"
+      "  version                 version, regex backends, asset directories\n"
+      "\n"
+      "`cope_cli <file>` is shorthand for `cope_cli hl <file>`.\n"
+      "\n"
+      "flags:\n"
+      "  --theme N               hl: theme index (see `cope_cli themes`)\n"
+      "  --grammar X             hl: force grammar by scope substring\n"
+      "  --lines N               hl: stop after N lines\n"
+      "  --no-color              hl: disable ANSI styling\n"
+      "  --engine std|pcre2      hl/scopes/quality: force the regex backend\n"
+      "  --tier grammar|fallback scopes: inspect one tier, ignoring the probe\n",
+      out);
+}
+
+int usage() {
+  std::fputs("usage: cope_cli <command> [args] -- run 'cope_cli help' for details\n", stderr);
   return 2;
 }
 
@@ -287,14 +346,13 @@ bool engineAvailable(const EngineContext& context, const std::string& engineName
     return true;
   }
   if (engineName != "std" && engineName != "pcre2") {
-    std::fprintf(stderr, "cope_cli: unknown engine '%s' (std|pcre2)\n", engineName.c_str());
+    cliError("unknown engine '" + engineName + "' (std|pcre2)");
   } else {
-    std::fprintf(stderr, "cope_cli: engine '%s' is not in this build", engineName.c_str());
-#ifdef COPE_HAS_PCRE2
-    std::fputc('\n', stderr);
-#else
-    std::fputs(" (configure with -DCOPE_USE_PCRE2=ON)\n", stderr);
+    std::string message = "engine '" + engineName + "' is not in this build";
+#ifndef COPE_HAS_PCRE2
+    message += " (configure with -DCOPE_USE_PCRE2=ON)";
 #endif
+    cliError(message);
   }
   return false;
 }
@@ -379,7 +437,7 @@ bool makeHighlighter(EngineContext& context, ide::syntax::IRegexEngine& regexEng
                      const std::vector<std::string>& lines, size_t byteSize,
                      std::optional<ide::highlight::Highlighter>& out) {
   if (context.themes.empty()) {
-    std::fprintf(stderr, "cope_cli: no themes found\n");
+    cliError("no themes found");
     return false;
   }
   if (!grammarOverride.empty()) {
@@ -396,7 +454,7 @@ bool makeHighlighter(EngineContext& context, ide::syntax::IRegexEngine& regexEng
       }
     }
     if (match == nullptr) {
-      std::fprintf(stderr, "cope_cli: no grammar scope matches '%s'\n", grammarOverride.c_str());
+      cliError("no grammar scope matches '" + grammarOverride + "'");
       return false;
     }
     // Route the file's extension at the chosen grammar.
@@ -425,7 +483,7 @@ bool makeHighlighter(EngineContext& context, ide::syntax::IRegexEngine& regexEng
 int commandCat(const std::string& path) {
   std::string bytes;
   if (!readWholeFile(path, bytes)) {
-    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+    cliError("cannot read " + path);
     return 1;
   }
   const ide::text::Document document(std::move(bytes));
@@ -451,11 +509,13 @@ int commandCat(const std::string& path) {
 int commandLines(const std::string& path) {
   std::string bytes;
   if (!readWholeFile(path, bytes)) {
-    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+    cliError("cannot read " + path);
     return 1;
   }
   const ide::text::Document document(std::move(bytes));
-  std::printf("lines %lld\nbytes %llu\n", static_cast<long long>(document.lineCount()),
+  std::printf("%slines%s %lld\n", outStyle.dim(), outStyle.reset(),
+              static_cast<long long>(document.lineCount()));
+  std::printf("%sbytes%s %llu\n", outStyle.dim(), outStyle.reset(),
               static_cast<unsigned long long>(document.size()));
   return 0;
 }
@@ -466,7 +526,7 @@ int commandBench(const std::string& path) {
   const Clock::time_point readStart = Clock::now();
   std::string bytes;
   if (!readWholeFile(path, bytes)) {
-    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+    cliError("cannot read " + path);
     return 1;
   }
   const double readMs = millisSince(readStart);
@@ -506,20 +566,31 @@ int commandBench(const std::string& path) {
   const double erasePerOp =
       erased > 0 ? eraseMs * 1000.0 / static_cast<double>(erased) : 0.0;
 
-  std::printf("file           %s\n", path.c_str());
-  std::printf("bytes          %llu\n", static_cast<unsigned long long>(fileBytes));
-  std::printf("lines          %lld\n", static_cast<long long>(document.lineCount()));
-  std::printf("read           %.3f ms (ifstream, not part of the engine)\n", readMs);
-  std::printf("open           %.3f ms (Document construction)\n", openMs);
-  std::printf("inserts        %d ops, %.3f ms total, %.3f us/op\n", kOps, insertMs, insertPerOp);
-  std::printf("erases         %d ops, %.3f ms total, %.3f us/op\n", erased, eraseMs, erasePerOp);
-  std::printf("final bytes    %llu\n", static_cast<unsigned long long>(document.size()));
-  std::printf("pieces         %llu\n",
+  const char* const dim = outStyle.dim();
+  const char* const reset = outStyle.reset();
+  std::printf("%s%-13s%s %s\n", dim, "file", reset, path.c_str());
+  std::printf("%s%-13s%s %llu\n", dim, "bytes", reset,
+              static_cast<unsigned long long>(fileBytes));
+  std::printf("%s%-13s%s %lld\n", dim, "lines", reset,
+              static_cast<long long>(document.lineCount()));
+  std::printf("%s%-13s%s %.3f ms %s(ifstream, not part of the engine)%s\n", dim, "read", reset,
+              readMs, dim, reset);
+  std::printf("%s%-13s%s %.3f ms %s(Document construction)%s\n", dim, "open", reset, openMs, dim,
+              reset);
+  std::printf("%s%-13s%s %d ops, %.3f ms total, %.3f us/op\n", dim, "inserts", reset, kOps,
+              insertMs, insertPerOp);
+  std::printf("%s%-13s%s %d ops, %.3f ms total, %.3f us/op\n", dim, "erases", reset, erased,
+              eraseMs, erasePerOp);
+  std::printf("%s%-13s%s %llu\n", dim, "final bytes", reset,
+              static_cast<unsigned long long>(document.size()));
+  std::printf("%s%-13s%s %llu\n", dim, "pieces", reset,
               static_cast<unsigned long long>(document.pieces().pieceCount()));
-  std::printf("tree height    %lld\n", static_cast<long long>(document.pieces().treeHeight()));
-  std::printf("add buffer     %llu bytes\n",
+  std::printf("%s%-13s%s %lld\n", dim, "tree height", reset,
+              static_cast<long long>(document.pieces().treeHeight()));
+  std::printf("%s%-13s%s %llu bytes\n", dim, "add buffer", reset,
               static_cast<unsigned long long>(document.pieces().addBufferSize()));
-  std::printf("version        %lld\n", static_cast<long long>(document.version()));
+  std::printf("%s%-13s%s %lld\n", dim, "version", reset,
+              static_cast<long long>(document.version()));
   return 0;
 }
 
@@ -570,20 +641,20 @@ int commandHl(int argc, char** argv) {
   const ide::theme::Theme* theme = nullptr;
   if (themeIndex >= 0) {
     if (static_cast<size_t>(themeIndex) >= context.themes.size()) {
-      std::fprintf(stderr, "cope_cli: theme index %d out of range (0..%zu)\n", themeIndex,
-                   context.themes.size() == 0 ? 0u : context.themes.size() - 1u);
+      cliError("theme index " + std::to_string(themeIndex) + " out of range (0.." +
+               std::to_string(context.themes.empty() ? 0u : context.themes.size() - 1u) + ")");
       return 1;
     }
     theme = &context.themes[static_cast<size_t>(themeIndex)].theme;
   } else if (context.themes.empty()) {
-    std::fprintf(stderr, "cope_cli: no themes found\n");
+    cliError("no themes found");
     return 1;
   }
 
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
-    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+    cliError("cannot read " + path);
     return 1;
   }
 
@@ -628,6 +699,15 @@ int commandHl(int argc, char** argv) {
     }
     std::cout << '\n';
   }
+  // Tty-only trailing summary: how much was printed and under what tier and
+  // theme, so a pretty render also states its own facts.
+  if (useColor) {
+    const ide::theme::Theme& summaryTheme = theme != nullptr ? *theme : context.defaultTheme();
+    std::cout << outStyle.dim() << "-- " << printLimit << " line"
+              << (printLimit == 1 ? "" : "s") << " \u00b7 tier "
+              << ide::highlight::tierName(highlighter->tier()) << " \u00b7 theme "
+              << summaryTheme.name() << outStyle.reset() << '\n';
+  }
   std::cout.flush();
   return 0;
 }
@@ -661,7 +741,7 @@ int commandScopes(int argc, char** argv) {
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
-    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+    cliError("cannot read " + path);
     return 1;
   }
 
@@ -677,7 +757,7 @@ int commandScopes(int argc, char** argv) {
   } else if (tierName == "fallback") {
     highlighter->forceTier(ide::highlight::Tier::kFallback);
   } else if (!tierName.empty()) {
-    std::fprintf(stderr, "cope_cli: unknown tier '%s' (grammar|fallback)\n", tierName.c_str());
+    cliError("unknown tier '" + tierName + "' (grammar|fallback)");
     return 1;
   }
 
@@ -689,7 +769,8 @@ int commandScopes(int argc, char** argv) {
   for (size_t i = 0; i < lines.size(); ++i) {
     highlighter->scopeLine(lines[i], state, scoped);
     for (const ide::highlight::ScopedSpan& span : scoped) {
-      std::printf("%zu:%zu-%zu ", i, span.begin, span.end);
+      std::printf("%s%zu:%zu-%zu%s ", outStyle.dim(), i, span.begin, span.end,
+                  outStyle.reset());
       stack.clear();
       highlighter->scopeTable().resolve(span.scopes, stack);
       for (size_t s = 0; s < stack.size(); ++s) {
@@ -705,12 +786,13 @@ int commandScopes(int argc, char** argv) {
 }
 
 /// Highlights one file and prints its quality report line. Shared by
-/// `quality <file>` and `quality --all`.
-int qualityForFile(EngineContext& context, const std::string& path) {
+/// `quality <file>` and `quality --all`. When `suspicious` is non-null it
+/// receives the report's verdict for the aggregate summary.
+int qualityForFile(EngineContext& context, const std::string& path, bool* suspicious) {
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
-    std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+    cliError("cannot read " + path);
     return 1;
   }
 
@@ -721,7 +803,17 @@ int qualityForFile(EngineContext& context, const std::string& path) {
   }
 
   const ide::highlight::QualityReport report = ide::highlight::analyzeDocument(*highlighter, lines);
-  std::printf("%s: %s\n", path.c_str(), ide::highlight::formatQualityReport(report).c_str());
+  if (suspicious != nullptr) {
+    *suspicious = report.suspicious();
+  }
+  // Same text as formatQualityReport with the verdict colored (green OK,
+  // yellow SUSPECT). The wrappers are empty strings off-tty, so piped output
+  // and CI logs are byte-identical to the uncolored form.
+  const std::string text = ide::highlight::formatQualityReport(report);
+  const size_t verdict = text.rfind(' ');
+  std::cout << outStyle.bold() << path << outStyle.reset() << ": " << text.substr(0, verdict)
+            << ' ' << (report.suspicious() ? outStyle.yellow() : outStyle.green())
+            << text.substr(verdict + 1) << outStyle.reset() << '\n';
   return 0;
 }
 
@@ -732,6 +824,8 @@ int commandQuality(int argc, char** argv) {
     const std::string_view arg = argv[i];
     if (arg == "--engine" && i + 1 < argc) {
       engineName = argv[++i];
+    } else if (arg == "--all" && what.empty()) {
+      what = "--all";
     } else if (!arg.empty() && arg[0] != '-' && what.empty()) {
       what = std::string(arg);
     } else {
@@ -747,20 +841,31 @@ int commandQuality(int argc, char** argv) {
     return 1;
   }
   if (!context.setup()) {
-    std::fprintf(stderr, "cope_cli: no themes or grammars found\n");
+    cliError("no themes or grammars found");
     return 1;
   }
 
   if (what == "--all") {
     int failures = 0;
+    size_t files = 0;
+    size_t suspiciousCount = 0;
     for (const std::string& path : listJsonFiles(grammarsDir(), context.host)) {
-      if (qualityForFile(context, path) != 0) {
+      bool suspicious = false;
+      if (qualityForFile(context, path, &suspicious) != 0) {
         ++failures;
+        continue;
+      }
+      ++files;
+      if (suspicious) {
+        ++suspiciousCount;
       }
     }
+    std::printf("%s%zu files, %zu suspicious%s\n", outStyle.dim(), files, suspiciousCount,
+                outStyle.reset());
     return failures == 0 ? 0 : 1;
   }
-  return qualityForFile(context, std::string(what));
+  bool suspicious = false;
+  return qualityForFile(context, std::string(what), &suspicious);
 }
 
 // ---------------------------------------------------------------------------
@@ -807,16 +912,13 @@ int commandDifftest(int argc, char** argv) {
     return usage();
   }
 #ifndef COPE_HAS_PCRE2
-  std::fputs(
-      "cope_cli: difftest needs the PCRE2 backend; configure with "
-      "-DCOPE_USE_PCRE2=ON and rebuild\n",
-      stderr);
+  cliError("difftest needs the PCRE2 backend; configure with -DCOPE_USE_PCRE2=ON and rebuild");
   return 2;
 #else
   const std::string what = argv[2];
   EngineContext context;
   if (!context.setup()) {
-    std::fprintf(stderr, "cope_cli: no themes or grammars found\n");
+    cliError("no themes or grammars found");
     return 1;
   }
 
@@ -837,7 +939,7 @@ int commandDifftest(int argc, char** argv) {
     std::vector<std::string> lines;
     size_t byteSize = 0;
     if (!loadLines(context.host, path, lines, byteSize)) {
-      std::fprintf(stderr, "cope_cli: cannot read %s\n", path.c_str());
+      cliError("cannot read " + path);
       return 1;
     }
 
@@ -925,15 +1027,17 @@ int commandDifftest(int argc, char** argv) {
   const ide::syntax::RegexEngineStats stdStats = stdEngine->stats();
   const ide::syntax::RegexEngineStats pcre2Stats = pcre2Engine->stats();
   std::printf(
-      "files %zu (%zu differing token streams) tokens std=%zu pcre2=%zu differing=%zu\n"
-      "engine std::regex: compiled=%zu rejected=%zu lossy=%zu\n"
-      "engine pcre2:      compiled=%zu rejected=%zu\n"
-      "recovered (std refused, pcre2 compiled): %zu\n"
-      "refused by both engines: %zu (informational: identical degradation)\n"
-      "refused by pcre2 but compiled by std: %zu\n",
-      files, filesDiffering, tokensStd, tokensPcre2, differingTokens, stdStats.compiled,
-      stdStats.rejected, stdStats.lossy, pcre2Stats.compiled, pcre2Stats.rejected, recovered,
-      refusedByBoth, pcre2Only);
+      "%sfiles %zu (%zu differing token streams) tokens std=%zu pcre2=%zu differing=%zu%s\n"
+      "%sengine std::regex:%s compiled=%zu rejected=%zu lossy=%zu\n"
+      "%sengine pcre2:%s      compiled=%zu rejected=%zu\n"
+      "%srecovered%s (std refused, pcre2 compiled): %s%zu%s\n"
+      "%srefused by both engines: %zu (informational: identical degradation)%s\n"
+      "%srefused by pcre2 but compiled by std: %zu%s\n",
+      outStyle.bold(), files, filesDiffering, tokensStd, tokensPcre2, differingTokens,
+      outStyle.reset(), outStyle.dim(), outStyle.reset(), stdStats.compiled, stdStats.rejected,
+      stdStats.lossy, outStyle.dim(), outStyle.reset(), pcre2Stats.compiled, pcre2Stats.rejected,
+      outStyle.dim(), outStyle.reset(), outStyle.green(), recovered, outStyle.reset(),
+      outStyle.dim(), refusedByBoth, outStyle.reset(), outStyle.dim(), pcre2Only, outStyle.reset());
   // Known-hard patterns both engines refuse (unbounded lookbehind,
   // codepoint escapes above U+00FF inside byte-mode classes) degrade
   // identically under both engines: informational, not a gate.
@@ -943,7 +1047,8 @@ int commandDifftest(int argc, char** argv) {
       if (pcre2Rejections.find(pattern) == stdRejections.end()) {
         continue;
       }
-      std::printf("  both refuse: %.120s\n", pattern.c_str());
+      std::printf("%s  both refuse:%s %.120s\n", outStyle.dim(), outStyle.reset(),
+                  pattern.c_str());
       if (++shown >= 20) {
         break;
       }
@@ -957,17 +1062,30 @@ int commandDifftest(int argc, char** argv) {
       if (stdRejections.find(pattern) != stdRejections.end()) {
         continue;
       }
-      std::printf("  pcre2-only refusal: %.120s -- %.120s\n", pattern.c_str(), reason.c_str());
+      std::printf("%s  pcre2-only refusal:%s %.120s -- %.120s\n", outStyle.red(),
+                  outStyle.reset(), pattern.c_str(), reason.c_str());
       if (++shown >= 30) {
         break;
       }
     }
-    std::fprintf(stderr, "cope_cli: %zu pattern(s) compiled by std::regex but refused by PCRE2\n",
-                 pcre2Only);
+    cliError(std::to_string(pcre2Only) +
+             " pattern(s) compiled by std::regex but refused by PCRE2");
     return 1;
   }
   return 0;
 #endif
+}
+
+int commandVersion() {
+  std::printf("cope_cli %s\n", COPE_VERSION);
+  std::fputs("regex backends: std", stdout);
+#ifdef COPE_HAS_PCRE2
+  std::fputs(", pcre2", stdout);
+#endif
+  std::fputc('\n', stdout);
+  std::printf("%sgrammars dir%s %s\n", outStyle.dim(), outStyle.reset(), grammarsDir().c_str());
+  std::printf("%sthemes dir%s   %s\n", outStyle.dim(), outStyle.reset(), themesDir().c_str());
+  return 0;
 }
 
 int commandList(const std::string& what) {
@@ -987,8 +1105,8 @@ int commandList(const std::string& what) {
 
   // themes: name plus type, one per line. Sorted by name (loadAllThemes).
   for (const ThemeEntry& entry : context.themes) {
-    std::printf("%s (%s)\n", std::string(entry.theme.name()).c_str(),
-                entry.theme.isDark() ? "dark" : "light");
+    std::printf("%s (%s%s%s)\n", std::string(entry.theme.name()).c_str(), outStyle.dim(),
+                entry.theme.isDark() ? "dark" : "light", outStyle.reset());
   }
   return 0;
 }
@@ -1000,6 +1118,14 @@ int main(int argc, char** argv) {
     return usage();
   }
   const std::string command = argv[1];
+
+  if (command == "help" || command == "--help" || command == "-h") {
+    printHelp(stdout);
+    return 0;
+  }
+  if (command == "version" || command == "--version" || command == "-V") {
+    return commandVersion();
+  }
 
   if (command == "cat") {
     if (argc != 3) {
@@ -1036,6 +1162,11 @@ int main(int argc, char** argv) {
       return usage();
     }
     return commandList(command);
+  }
+  // Anything else starting with '-' is an unknown option, not a file.
+  if (!command.empty() && command[0] == '-') {
+    cliError("unknown option '" + command + "' -- run 'cope_cli help'");
+    return 2;
   }
   // Convenience: `cope_cli <file> [flags...]` means `cope_cli hl <file> ...`.
   // commandHl parses from argv[2], so rebuild the argument vector with "hl"
