@@ -13,7 +13,7 @@
 //                            print the file highlighted with 24-bit ANSI color
 //   cope_cli scopes <file> [--tier grammar|fallback] [--engine std|pcre2]
 //                            print each token's line:range and scope stack
-//   cope_cli quality <file|--all> [--engine std|pcre2]
+//   cope_cli quality <file|--all> [--engine std|pcre2] [--theme N]
 //                            print the highlight quality/coverage metric
 //   cope_cli difftest <file|--all>   differential run: std::regex vs PCRE2
 //                            on the same input, diffing token streams (slice 3)
@@ -152,7 +152,7 @@ void printHelp(std::FILE* out) {
       "`cope_cli <file>` is shorthand for `cope_cli hl <file>`.\n"
       "\n"
       "flags:\n"
-      "  --theme N               hl: theme index (see `cope_cli themes`)\n"
+      "  --theme N               hl/quality: theme index (see `cope_cli themes`)\n"
       "  --grammar X             hl: force grammar by scope substring\n"
       "  --lines N               hl: stop after N lines\n"
       "  --no-color              hl: disable ANSI styling\n"
@@ -788,7 +788,8 @@ int commandScopes(int argc, char** argv) {
 /// Highlights one file and prints its quality report line. Shared by
 /// `quality <file>` and `quality --all`. When `suspicious` is non-null it
 /// receives the report's verdict for the aggregate summary.
-int qualityForFile(EngineContext& context, const std::string& path, bool* suspicious) {
+int qualityForFile(EngineContext& context, const std::string& path, bool* suspicious,
+                    const ide::theme::Theme* themeOverride) {
   std::vector<std::string> lines;
   size_t byteSize = 0;
   if (!loadLines(context.host, path, lines, byteSize)) {
@@ -797,7 +798,7 @@ int qualityForFile(EngineContext& context, const std::string& path, bool* suspic
   }
 
   std::optional<ide::highlight::Highlighter> highlighter;
-  if (!makeHighlighter(context, *context.regexEngine, path, std::string(), nullptr, lines,
+  if (!makeHighlighter(context, *context.regexEngine, path, std::string(), themeOverride, lines,
                         byteSize, highlighter)) {
     return 1;
   }
@@ -820,10 +821,13 @@ int qualityForFile(EngineContext& context, const std::string& path, bool* suspic
 int commandQuality(int argc, char** argv) {
   std::string what;
   std::string engineName;
+  int themeIndex = -1;
   for (int i = 2; i < argc; ++i) {
     const std::string_view arg = argv[i];
     if (arg == "--engine" && i + 1 < argc) {
       engineName = argv[++i];
+    } else if (arg == "--theme" && i + 1 < argc) {
+      themeIndex = std::atoi(argv[++i]);
     } else if (arg == "--all" && what.empty()) {
       what = "--all";
     } else if (!arg.empty() && arg[0] != '-' && what.empty()) {
@@ -845,13 +849,23 @@ int commandQuality(int argc, char** argv) {
     return 1;
   }
 
+  const ide::theme::Theme* theme = nullptr;
+  if (themeIndex >= 0) {
+    if (static_cast<size_t>(themeIndex) >= context.themes.size()) {
+      cliError("theme index " + std::to_string(themeIndex) + " out of range (0.." +
+               std::to_string(context.themes.empty() ? 0u : context.themes.size() - 1u) + ")");
+      return 1;
+    }
+    theme = &context.themes[static_cast<size_t>(themeIndex)].theme;
+  }
+
   if (what == "--all") {
     int failures = 0;
     size_t files = 0;
     size_t suspiciousCount = 0;
     for (const std::string& path : listJsonFiles(grammarsDir(), context.host)) {
       bool suspicious = false;
-      if (qualityForFile(context, path, &suspicious) != 0) {
+      if (qualityForFile(context, path, &suspicious, theme) != 0) {
         ++failures;
         continue;
       }
@@ -865,7 +879,7 @@ int commandQuality(int argc, char** argv) {
     return failures == 0 ? 0 : 1;
   }
   bool suspicious = false;
-  return qualityForFile(context, std::string(what), &suspicious);
+  return qualityForFile(context, std::string(what), &suspicious, theme);
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ add_library(ide_text STATIC
   piece_table.cpp
   undo.cpp
   document.cpp
+  search.cpp
 )
 
 target_include_directories(ide_text PUBLIC ${PROJECT_SOURCE_DIR}/include)

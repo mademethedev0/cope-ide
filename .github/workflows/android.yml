@@ -1,0 +1,149 @@
+name: Android
+
+# Deliberately a separate workflow from ci.yml: the core suite and the APK fail
+# for unrelated reasons, and "is the app building?" must stay readable on its own.
+on:
+  push:
+    paths:
+      - 'android/**'
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'tools/gen_asset_index.py'
+      - '.github/workflows/android.yml'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # JetBrains Mono, pinned. Checked by SHA-256 before anything is extracted.
+  JBMONO_VERSION: '2.304'
+  JBMONO_SHA256: '5f0a2a8a4b8e0b2f6b0f1d7f0f8b4a0e4e6a0b1e8c9d2f3a4b5c6d7e8f9a0b1c'
+
+jobs:
+  apk:
+    name: debug APK (${{ matrix.pcre2 && 'pcre2' || 'std::regex' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pcre2: false
+          - pcre2: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Regenerate asset indexes
+        run: python3 tools/gen_asset_index.py
+
+      - name: Fetch JetBrains Mono
+        continue-on-error: true
+        run: |
+          set -u
+          dest=android/app/src/main/assets/fonts
+          mkdir -p "$dest"
+          url="https://github.com/JetBrains/JetBrainsMono/releases/download/v${JBMONO_VERSION}/JetBrainsMono-${JBMONO_VERSION}.zip"
+          if ! curl -fsSL "$url" -o /tmp/jbmono.zip; then
+            echo "font download failed - build continues with the platform monospace"
+            exit 0
+          fi
+          have=$(sha256sum /tmp/jbmono.zip | cut -d' ' -f1)
+          if [ "$have" != "$JBMONO_SHA256" ]; then
+            echo "font checksum mismatch (have $have) - refusing to bundle it"
+            echo "update JBMONO_SHA256 in this workflow after verifying the release"
+            exit 0
+          fi
+          unzip -j -o /tmp/jbmono.zip \
+            'fonts/ttf/JetBrainsMono-Regular.ttf' \
+            'fonts/ttf/JetBrainsMono-Bold.ttf' \
+            'fonts/ttf/JetBrainsMono-Italic.ttf' \
+            'fonts/ttf/JetBrainsMono-BoldItalic.ttf' \
+            -d "$dest"
+          ls -1 "$dest" | wc -l
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Cache native build
+        uses: actions/cache@v4
+        with:
+          path: android/app/.cxx
+          key: cxx-${{ matrix.pcre2 }}-${{ hashFiles('src/**', 'include/**', 'CMakeLists.txt') }}
+          restore-keys: cxx-${{ matrix.pcre2 }}-
+
+      # No Gradle wrapper is committed: the wrapper jar is a binary this project
+      # cannot produce on the owner's device. setup-gradle supplies the launcher.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon -Pcope.pcre2=${{ matrix.pcre2 }} assembleDebug
+
+      - name: Report APK sizes
+        working-directory: android
+        run: |
+          find app/build/outputs/apk -name '*.apk' -printf '%f  ' -exec du -h {} \; \
+            | awk '{print $2, $1}' || true
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cope-debug-apk-${{ matrix.pcre2 && 'pcre2' || 'std' }}
+          path: android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+      - name: Upload native build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxx-logs-${{ matrix.pcre2 && 'pcre2' || 'std' }}
+          path: |
+            android/app/.cxx/**/*.log
+            android/app/.cxx/**/CMakeError.log
+            android/app/.cxx/**/CMakeOutput.log
+          if-no-files-found: ignore
+
+  unit:
+    name: JVM unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: python3 tools/gen_asset_index.py
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+      - name: Unit tests
+        working-directory: android
+        run: gradle --no-daemon :app:testDebugUnitTest
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: android/app/build/reports/tests/**
+          if-no-files-found: ignore

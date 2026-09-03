@@ -305,14 +305,89 @@ std::optional<std::vector<Alignment>> parseDelimiterRow(std::string_view line) {
 
 std::vector<Inline> parseInlines(std::string_view text, int depth);
 
+/// A verbatim inline region: a code span or an inline math run. Content is
+/// [contentBegin, contentEnd); `end` is one past the whole region, closing
+/// delimiter included.
+struct VerbatimSpan {
+    size_t contentBegin = 0;
+    size_t contentEnd = 0;
+    size_t end = 0;
+};
+
+/// Scans the code span opening at `i` (which must be a '`'). Returns nullopt
+/// when the run is never closed — then the backticks are literal text.
+/// parseInlines and findClosingRun both go through this function so the
+/// closer scan can never disagree with the content scan about where a code
+/// span ends.
+std::optional<VerbatimSpan> scanCodeSpan(std::string_view text, size_t i) {
+    const size_t n = text.size();
+    if (i >= n || text[i] != '`') return std::nullopt;
+    size_t k = i;
+    while (k < n && text[k] == '`') ++k;
+    const size_t runLen = k - i;
+    size_t p = k;
+    while (p < n) {
+        if (text[p] == '`') {
+            size_t r = p;
+            while (r < n && text[r] == '`') ++r;
+            if (r - p == runLen) return VerbatimSpan{k, p, p + runLen};
+            p = r;
+        } else {
+            ++p;
+        }
+    }
+    return std::nullopt;
+}
+
+/// Scans the inline math opening at `i` (which must be a '$'), `$$…$$` form
+/// first. Returns nullopt when the shape is not math — then the '$' is
+/// literal text. Shared for the same reason as scanCodeSpan.
+std::optional<VerbatimSpan> scanMath(std::string_view text, size_t i) {
+    const size_t n = text.size();
+    if (i >= n || text[i] != '$') return std::nullopt;
+    if (i + 1 < n && text[i + 1] == '$') {
+        // `$$…$$`. The content may not be empty and may not start with '$':
+        // the serializer always emits the `$$` form, so a leading '$' would
+        // re-read as a different (empty) span.
+        if (i + 2 >= n || text[i + 2] == '$') return std::nullopt;
+        const size_t close = text.find("$$", i + 2);
+        if (close == std::string_view::npos || close <= i + 2) return std::nullopt;
+        // Math content is emitted raw by the serializer, so it can never be
+        // guarded against re-reading as a block construct; inline math
+        // therefore must not span lines.
+        const size_t nl = text.find('\n', i + 2);
+        if (nl != std::string_view::npos && nl < close) return std::nullopt;
+        return VerbatimSpan{i + 2, close, close + 2};
+    }
+    // `$…$` — the opening '$' must be followed by a non-space char that is
+    // neither '$' (handled above) nor '\\' (an escaped '$' right after would
+    // be swallowed as content otherwise).
+    if (i + 1 >= n || isSpaceLike(text[i + 1]) || text[i + 1] == '\\') return std::nullopt;
+    size_t j = i + 2;
+    while (j < n) {
+        if (text[j] == '\n') return std::nullopt; // see above: never spans lines
+        if (text[j] == '$' && !isSpaceLike(text[j - 1])) break;
+        ++j;
+    }
+    if (j >= n) return std::nullopt;
+    return VerbatimSpan{i + 1, j, j + 1};
+}
+
 /// Finds the start of a closing delimiter run of `c`, searched from `from`.
-/// The scan is escape-aware (a backslash pair is skipped) so an escaped
-/// delimiter can never close — this keeps serialize/parse round trips
-/// stable. A run only closes if the char before it is not whitespace; for
-/// '_' the char after the run must not be alphanumeric (no intraword
-/// underscore emphasis). `maxLen` caps the accepted run length: emphasis
-/// accepts exactly one delimiter (a longer run is strong-emphasis territory
-/// and is skipped), strong accepts any run of >= 2. Returns npos if none.
+/// Callers pass the offset just past the *whole* opening run, so a run can
+/// never close against itself (`__` is literal, not an empty Emph).
+///
+/// The scan skips what parseInlines consumes wholesale: a backslash pair (so
+/// an escaped delimiter can never close) and verbatim regions (so a '*'
+/// inside a code span or inline math is not mistaken for a delimiter). Both
+/// exist to keep the closer scan in agreement with the content scan, which
+/// is what makes serialize/parse round trips stable.
+///
+/// A run only closes if the char before it is not whitespace; for '_' the
+/// char after the run must not be alphanumeric (no intraword underscore
+/// emphasis). `maxLen` caps the accepted run length: emphasis accepts exactly
+/// one delimiter (a longer run is strong-emphasis territory and is skipped),
+/// strong accepts any run of >= 2. Returns npos if none.
 size_t findClosingRun(std::string_view text, char c, size_t from, int minLen, int maxLen,
                        bool underscore) {
     const size_t n = text.size();
@@ -321,6 +396,17 @@ size_t findClosingRun(std::string_view text, char c, size_t from, int minLen, in
         if (text[p] == '\\') {
             p += 2;
             continue;
+        }
+        if (text[p] == '`') {
+            if (const auto span = scanCodeSpan(text, p)) {
+                p = span->end;
+                continue;
+            }
+        } else if (text[p] == '$') {
+            if (const auto span = scanMath(text, p)) {
+                p = span->end;
+                continue;
+            }
         }
         if (text[p] == c) {
             size_t r = p;
@@ -382,34 +468,20 @@ std::vector<Inline> parseInlines(std::string_view text, int depth) {
 
         // code span: backtick run closed by a run of the same length
         if (c == '`') {
-            size_t k = i;
-            while (k < n && text[k] == '`') ++k;
-            size_t p = k;
-            bool found = false;
-            while (p < n) {
-                if (text[p] == '`') {
-                    size_t r = p;
-                    while (r < n && text[r] == '`') ++r;
-                    if (r - p == k - i) {
-                        found = true;
-                        break;
-                    }
-                    p = r;
-                } else {
-                    ++p;
-                }
-            }
-            if (found) {
-                std::string_view content = text.substr(k, p - k);
+            if (const auto span = scanCodeSpan(text, i)) {
+                std::string_view content =
+                    text.substr(span->contentBegin, span->contentEnd - span->contentBegin);
                 if (content.size() >= 2 && content.front() == ' ' &&
                     content.back() == ' ' && content.find_first_not_of(' ') != std::string_view::npos) {
                     content = content.substr(1, content.size() - 2);
                 }
                 flush();
                 out.push_back(Inline{Code{std::string(content)}});
-                i = p + (k - i);
+                i = span->end;
                 continue;
             }
+            size_t k = i;
+            while (k < n && text[k] == '`') ++k;
             lit.append(k - i, '`');
             i = k;
             continue;
@@ -417,52 +489,20 @@ std::vector<Inline> parseInlines(std::string_view text, int depth) {
 
         // inline math
         if (c == '$') {
-            if (i + 1 < n && text[i + 1] == '$') {
-                // `$$...$$` inline math. The content may not start with '$'
-                // (that would make the serialization start with "$$\$" and
-                // re-parse differently) and may not be empty.
-                if (i + 2 < n && text[i + 2] != '$') {
-                    const size_t close = text.find("$$", i + 2);
-                    // Math content is emitted raw by the serializer, so it
-                    // can never be guarded against re-reading as a block
-                    // construct; inline math therefore must not span lines.
-                    const size_t nl = text.find('\n', i + 2);
-                    if (close != std::string_view::npos && close > i + 2 &&
-                        (nl == std::string_view::npos || nl > close)) {
-                        flush();
-                        out.push_back(Inline{InlineMath{std::string(text.substr(i + 2, close - (i + 2)))}});
-                        i = close + 2;
-                        continue;
-                    }
-                }
-                lit += "$$";
-                i += 2;
+            if (const auto span = scanMath(text, i)) {
+                flush();
+                out.push_back(Inline{InlineMath{
+                    std::string(text.substr(span->contentBegin, span->contentEnd - span->contentBegin))}});
+                i = span->end;
                 continue;
             }
-            // `$...$` — the opening '$' must be followed by a non-space char
-            // that is neither '$' (handled above) nor '\\' (an escaped '$'
-            // right after would be swallowed as content otherwise).
-            if (i + 1 < n && !isSpaceLike(text[i + 1]) && text[i + 1] != '\\') {
-                size_t j = i + 2;
-                bool crossedLine = false;
-                while (j < n) {
-                    // see the $$ branch: inline math never spans lines
-                    if (text[j] == '\n') {
-                        crossedLine = true;
-                        break;
-                    }
-                    if (text[j] == '$' && !isSpaceLike(text[j - 1])) break;
-                    ++j;
-                }
-                if (j < n && !crossedLine) {
-                    flush();
-                    out.push_back(Inline{InlineMath{std::string(text.substr(i + 1, j - (i + 1)))}});
-                    i = j + 1;
-                    continue;
-                }
+            if (i + 1 < n && text[i + 1] == '$') {
+                lit += "$$";
+                i += 2;
+            } else {
+                lit += '$';
+                ++i;
             }
-            lit += '$';
-            ++i;
             continue;
         }
 
@@ -570,30 +610,40 @@ std::vector<Inline> parseInlines(std::string_view text, int depth) {
         if ((c == '*' || c == '_') && !capped) {
             size_t k = i;
             while (k < n && text[k] == c) ++k;
+            const size_t runLen = k - i;
             bool canOpen = true;
             if (c == '_') {
                 canOpen = (i == 0) || !isAsciiAlnum(text[i - 1]);
             }
             if (k < n && isSpaceLike(text[k])) canOpen = false;
             if (canOpen) {
-                if (k - i >= 2) {
+                // The delimiter is the *tail* of the opening run (two chars
+                // for strong, one for emphasis) and any surplus leading
+                // chars are literal text — the same pairing CommonMark's
+                // delimiter stack performs, so "**a*" is `*` + emph(a).
+                // Scanning from the end of the run is also what makes the
+                // content non-empty by construction: "__" is literal text,
+                // not an inexpressible empty Emph.
+                if (runLen >= 2) {
                     const size_t close = findClosingRun(text, c, k, 2, -1, c == '_');
                     if (close != std::string_view::npos) {
+                        lit.append(runLen - 2, c);
                         flush();
-                        out.push_back(Inline{Strong{parseInlines(text.substr(i + 2, close - (i + 2)), depth + 1)}});
+                        out.push_back(Inline{Strong{parseInlines(text.substr(k, close - k), depth + 1)}});
                         i = close + 2;
                         continue;
                     }
                 }
-                const size_t close = findClosingRun(text, c, i + 1, 1, 1, c == '_');
+                const size_t close = findClosingRun(text, c, k, 1, 1, c == '_');
                 if (close != std::string_view::npos) {
+                    lit.append(runLen - 1, c);
                     flush();
-                    out.push_back(Inline{Emph{parseInlines(text.substr(i + 1, close - (i + 1)), depth + 1)}});
+                    out.push_back(Inline{Emph{parseInlines(text.substr(k, close - k), depth + 1)}});
                     i = close + 1;
                     continue;
                 }
             }
-            lit.append(k - i, c);
+            lit.append(runLen, c);
             i = k;
             continue;
         }
@@ -941,10 +991,30 @@ void appendEscaped(std::string& out, std::string_view t) {
     }
 }
 
+/// Picks the delimiter char for an emphasis-like node. '*' is the default;
+/// '_' is used when '*' would merge with an adjacent '*' into a longer run
+/// (nested emphasis at a boundary), because a run of N delimiters is
+/// ambiguous on re-parse. '_' is only legal when neither side touches an
+/// alphanumeric (there is no intraword underscore emphasis) and the body does
+/// not itself start or end with '_'. When neither char is clean, '*' is
+/// emitted anyway and serialize()'s fixed-point loop makes the result stable.
+char emphasisChar(std::string_view body, char prevByte) {
+    const bool starCollides =
+        prevByte == '*' || (!body.empty() && (body.front() == '*' || body.back() == '*'));
+    if (!starCollides) return '*';
+    const bool underscoreOk = !body.empty() && body.front() != '_' && body.back() != '_' &&
+                              !isSpaceLike(body.front()) && !isSpaceLike(body.back()) &&
+                              !isAsciiAlnum(prevByte) && prevByte != '_';
+    return underscoreOk ? '_' : '*';
+}
+
 void serializeInlines(std::string& out, const std::vector<Inline>& children);
 
 void serializeInline(std::string& out, const Inline& node) {
     auto text = [&](const std::string& s) { appendEscaped(out, s); };
+    // The byte the node lands next to: '_' emphasis is illegal against an
+    // alphanumeric, and a '*' next to a '*' would form a longer run.
+    const char prevByte = out.empty() ? '\0' : out.back();
     std::visit(
         [&](const auto& v) {
             using T = std::decay_t<decltype(v)>;
@@ -978,13 +1048,19 @@ void serializeInline(std::string& out, const Inline& node) {
                 out += v.text;
                 out += "$$";
             } else if constexpr (std::is_same_v<T, Emph>) {
-                out += '*';
-                serializeInlines(out, v.children);
-                out += '*';
+                std::string body;
+                serializeInlines(body, v.children);
+                const char d = emphasisChar(body, prevByte);
+                out += d;
+                out += body;
+                out += d;
             } else if constexpr (std::is_same_v<T, Strong>) {
-                out += "**";
-                serializeInlines(out, v.children);
-                out += "**";
+                std::string body;
+                serializeInlines(body, v.children);
+                const char d = emphasisChar(body, prevByte);
+                out.append(2, d);
+                out += body;
+                out.append(2, d);
             } else if constexpr (std::is_same_v<T, Strike>) {
                 out += "~~";
                 serializeInlines(out, v.children);

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app name is the app name. No tagline, no "— Code Editor" suffix:
+         the launcher is not an advertising surface. -->
+    <string name="app_name">Cope</string>
+</resources>

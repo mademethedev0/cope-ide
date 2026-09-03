@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The only colour in the resource system. Every other colour in the app is
+      derived at runtime from the loaded editor theme (theme/CopeColors.kt), so
+      there is deliberately no palette here to drift out of sync.
+
+      This one exists because windowBackground is painted by the platform before
+      any Kotlin runs. It matches the icon background (#2B3140) so the launch is a
+      dark step into the app rather than a white flash.
+    -->
+    <color name="launch_background">#2B3140</color>
+</resources>

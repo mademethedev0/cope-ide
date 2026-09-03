@@ -1,0 +1,244 @@
+expression.ng	angular-expression.json	
+inline-styles.ng	angular-inline-style.json	
+inline-template.ng	angular-inline-template.json	
+inline.es6-css	es-tag-css.json	
+inline.es6-glsl	es-tag-glsl.json	
+inline.es6-html	es-tag-html.json	
+inline.es6-sql	es-tag-sql.json	
+inline.es6-xml	es-tag-xml.json	
+markdown.mermaid.codeblock	mermaid.json	
+markdown.nix.codeblock	markdown-nix.json	
+markdown.vue.codeblock	markdown-vue.json	
+source.abap	abap.json	abap
+source.actionscript.3	actionscript-3.json	as
+source.ada	ada.json	
+source.apacheconf	apache.json	conf,envvars,htaccess,htgroups,htpasswd
+source.apex	apex.json	apex,cls,trigger
+source.apl	apl.json	apl,apla,aplc,aplf,apli,apln,aplo,dyalog,dyapp,mipage
+source.applescript	applescript.json	applescript,scpt,script editor
+source.ara	ara.json	ara
+source.asm.x86_64	asm.json	asm,nasm,yasm,inc,s
+source.asp.vb.net	vb.json	
+source.astro	astro.json	astro
+source.awk	awk.json	awk
+source.ballerina	ballerina.json	bal
+source.batchfile	bat.json	
+source.berry	berry.json	
+source.bicep	bicep.json	bicep,bicepparam
+source.bsl	bsl.json	bsl,os
+source.c	c.json	
+source.cadence	cadence.json	
+source.cairo0	cairo.json	
+source.clar	clarity.json	
+source.clojure	clojure.json	
+source.cmake	cmake.json	cmake,txt
+source.cobol	cobol.json	ccp,scbl,cobol,cbl,cblle,cblsrce,cblcpy,lks,pdv,cpy,copybook,cobcopy,fd,sel,scb,sqlcblle,cob,dds,def,src,ss,wks,bib,pco
+source.coffee	coffee.json	
+source.commonlisp	common-lisp.json	lisp,lsp,l,cl,asd,asdf
+source.coq	coq.json	v
+source.cpp	cpp.json	
+source.cpp.embedded.macro	cpp-macro.json	
+source.crystal	crystal.json	cr
+source.cs	csharp.json	
+source.css	css.json	
+source.css.less	less.json	
+source.css.postcss	postcss.json	pcss,postcss
+source.css.scss	scss.json	
+source.cue	cue.json	cue
+source.cypher	cypher.json	cql,cyp,cypher
+source.d	d.json	d,di,dpp
+source.dart	dart.json	
+source.dax	dax.json	
+source.desktop	desktop.json	
+source.diff	diff.json	
+source.dm	dream-maker.json	dm,dme
+source.dockerfile	docker.json	
+source.dotenv	dotenv.json	
+source.elixir	elixir.json	ex,exs
+source.elm	elm.json	elm
+source.emacs.lisp	emacs-lisp.json	el,elc,eld,spacemacs,_emacs,emacs,desktop,abbrev_defs,ede,cask,gnus,viper
+source.erlang	erlang.json	erl,escript,hrl,xrl,yrl
+source.fish	fish.json	
+source.fnl	fennel.json	
+source.fortran.fixed	fortran-fixed-form.json	f,f77,for
+source.fortran.free	fortran-free-form.json	f90,f95,f03,f08,f18,fpp,pf
+source.fsharp	fsharp.json	
+source.ftl	fluent.json	
+source.gdresource	gdresource.json	
+source.gdscript	gdscript.json	gd
+source.gdshader	gdshader.json	gdshader
+source.genie	genie.json	gs
+source.gjs	glimmer-js.json	
+source.gleam	gleam.json	gleam
+source.glsl	glsl.json	vs,fs,gs,vsh,fsh,gsh,vshader,fshader,gshader,vert,frag,geom,glsl
+source.gnuplot	gnuplot.json	gp,plt,plot,gnuplot
+source.go	go.json	
+source.graphql	graphql.json	graphql,graphqls,gql,graphcool
+source.groovy	groovy.json	
+source.gts	glimmer-ts.json	
+source.hack	hack.json	hh,php,hack
+source.haskell	haskell.json	hs,hs-boot,hsig
+source.hcl	hcl.json	hcl
+source.hcl.terraform	terraform.json	tf,tfvars
+source.hjson	hjson.json	hjson
+source.hlsl	hlsl.json	
+source.http	http.json	http,rest
+source.hurl	hurl.json	
+source.hx	haxe.json	hx,dump
+source.hxml	hxml.json	hxml
+source.hy	hy.json	
+source.imba	imba.json	imba,imba2
+source.ini	ini.json	
+source.java	java.json	
+source.jinja	jinja.json	
+source.jison	jison.json	jison
+source.js	javascript.json	
+source.js.jsx	jsx.json	
+source.json	json.json	
+source.json.comments	jsonc.json	
+source.json.lines	jsonl.json	
+source.json5	json5.json	json5
+source.jsonnet	jsonnet.json	
+source.jssm	jssm.json	jssm,jssm_state
+source.julia	julia.json	
+source.kdl	kdl.json	
+source.kotlin	kotlin.json	kt,kts
+source.kusto	kusto.json	csl,kusto,kql
+source.lean4	lean.json	
+source.llvm	llvm.json	
+source.logo	logo.json	
+source.lua	lua.json	
+source.luau	luau.json	luau
+source.makefile	make.json	
+source.matlab	matlab.json	m
+source.mdx	mdx.json	mdx
+source.mips	mipsasm.json	s,mips,spim,asm
+source.mojo	mojo.json	
+source.move	move.json	
+source.narrat	narrat.json	
+source.nextflow	nextflow.json	
+source.nginx	nginx.json	erb,conf,ngx,types,fastcgi_params,scgi_params,uwsgi_params
+source.nim	nim.json	nim
+source.nix	nix.json	nix
+source.nushell	nushell.json	
+source.objc	objective-c.json	
+source.objcpp	objective-cpp.json	
+source.ocaml	ocaml.json	ml,mli
+source.pascal	pascal.json	pas,p,pp,dfm,fmx,dpr,dpk,lfm,lpr,ppr
+source.perl	perl.json	
+source.perl.6	raku.json	
+source.php	php.json	
+source.pkl	pkl.json	pkl,pcf
+source.plsql.oracle	plsql.json	sql,ddl,dml,pkh,pks,pkb,pck,pls,plb
+source.po	po.json	po,pot,potx
+source.polar	polar.json	
+source.powerquery	powerquery.json	pq,pqm
+source.powershell	powershell.json	
+source.prisma	prisma.json	prisma
+source.prolog	prolog.json	pl,pro
+source.proto	proto.json	proto
+source.puppet	puppet.json	pp
+source.purescript	purescript.json	purs
+source.python	python.json	
+source.ql	codeql.json	ql,qll
+source.qml	qml.json	
+source.qmldir	qmldir.json	
+source.qss	qss.json	
+source.r	r.json	
+source.racket	racket.json	
+source.reg	reg.json	reg
+source.regexp.python	regexp.json	re
+source.rel	rel.json	
+source.riscv	riscv.json	s,riscv,asm
+source.rosmsg	rosmsg.json	msg,srv,action
+source.rst	rst.json	
+source.ruby	ruby.json	
+source.rust	rust.json	
+source.sas	sas.json	sas
+source.sass	sass.json	sass
+source.scad	openscad.json	scad
+source.scala	scala.json	scala
+source.scheme	scheme.json	scm,ss,sch,rkt
+source.sdbl	sdbl.json	sdbl,query
+source.shaderlab	shaderlab.json	
+source.shell	shellscript.json	
+source.smalltalk	smalltalk.json	st
+source.solidity	solidity.json	sol
+source.sparql	sparql.json	rq,sparql,sq
+source.splunk_search	splunk.json	splunk,spl
+source.sql	sql.json	
+source.ssh-config	ssh-config.json	ssh_config,ssh/config,sshd_config
+source.stata	stata.json	do,ado,mata
+source.stylus	stylus.json	styl,stylus
+source.svelte	svelte.json	svelte
+source.swift	swift.json	swift
+source.systemd	systemd.json	
+source.systemverilog	system-verilog.json	v,vh,sv,svh
+source.talon	talonscript.json	
+source.tasl	tasl.json	tasl
+source.tcl	tcl.json	tcl
+source.templ	templ.json	
+source.toml	toml.json	toml
+source.ts	typescript.json	
+source.ts.ng	angular-ts.json	
+source.ts.tags	ts-tags.json	
+source.tsp	typespec.json	tsp
+source.tsx	tsx.json	
+source.turtle	turtle.json	turtle,ttl,acl
+source.typst	typst.json	
+source.v	v.json	v,vh,vsh
+source.vala	vala.json	vala,vapi,gs
+source.verilog	verilog.json	v,vh
+source.vhdl	vhdl.json	vhd,vhdl,vho,vht
+source.viml	viml.json	
+source.vue	vue.json	
+source.vue-vine	vue-vine.json	
+source.vyper	vyper.json	
+source.wat	wasm.json	
+source.wenyan	wenyan.json	
+source.wgsl	wgsl.json	
+source.wikitext	wikitext.json	
+source.wit	wit.json	
+source.wolfram	wolfram.json	wl,m,wls,wlt,mt
+source.yaml	yaml.json	yaml,yml,rviz,reek,clang-format,yaml-tmlanguage,syntax,sublime-syntax
+source.zenscript	zenscript.json	zs
+source.zig	zig.json	zig,zon
+template.blocks.ng	angular-template-blocks.json	
+template.let.ng	angular-let-declaration.json	
+template.ng	angular-template.json	
+text.asciidoc	asciidoc.json	ad,asc,adoc,asciidoc,txt
+text.aspnetcorerazor	razor.json	razor,cshtml
+text.beancount	beancount.json	beancount
+text.bibtex	bibtex.json	
+text.codeowners	codeowners.json	
+text.csv	csv.json	csv
+text.gherkin.feature	gherkin.json	feature
+text.git-commit	git-commit.json	
+text.git-rebase	git-rebase.json	
+text.haml	haml.json	haml
+text.html.basic	html.json	
+text.html.derivative	html-derivative.json	
+text.html.derivative.ng	angular-html.json	
+text.html.edge	edge.json	
+text.html.erb	erb.json	erb,rhtml
+text.html.handlebars	handlebars.json	
+text.html.jinja	jinja-html.json	
+text.html.liquid	liquid.json	liquid
+text.html.markdown	markdown.json	
+text.html.php.blade	blade.json	php
+text.html.soy	soy.json	soy
+text.html.twig	twig.json	twig
+text.html.vue-html	vue-html.json	
+text.log	log.json	log
+text.markdown.mdc.standalone	mdc.json	
+text.marko	marko.json	marko
+text.pug	pug.json	
+text.shell-session	shellsession.json	sh-session
+text.tex	tex.json	
+text.tex.latex	latex.json	
+text.tsv	tsv.json	tsv,tab
+text.xml	xml.json	
+text.xml.xsl	xsl.json	
+vue.directives	vue-directives.json	
+vue.interpolations	vue-interpolations.json	
+vue.sfc.style.variable.injection	vue-sfc-style-variable-injection.json	

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Theme.Cope exists to do as little as possible. The app draws every pixel of
+      its own chrome from the loaded editor theme, so the platform theme's only
+      jobs are: no action bar, no window animations fighting the IME, and a
+      windowBackground that matches a dark editor so the launch does not flash
+      white before Compose has a frame.
+
+      Parented on android:Theme.Material.NoActionBar rather than a Material
+      Components / Material3 theme: no view-level Material widget is used, and a
+      MaterialComponents parent would require the material2 dependency purely to
+      satisfy an XML attribute.
+    -->
+    <style name="Theme.Cope" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/launch_background</item>
+        <item name="android:colorBackground">@color/launch_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>
