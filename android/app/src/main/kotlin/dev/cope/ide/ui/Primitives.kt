@@ -360,7 +360,7 @@ public fun PillButton(
     Box(
         modifier
             .height(32.dp)
-            .background(if (emphasised) colors.accent else colors.keyBg)
+            .background(Color(if (emphasised) colors.accent else colors.keyBg))
             .clickable { onClick() }
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
