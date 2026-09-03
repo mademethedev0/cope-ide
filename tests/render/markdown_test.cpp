@@ -457,7 +457,7 @@ TEST(MarkdownSerialize, SoftBreakSecondLineGuards) {
 }
 
 TEST(MarkdownSerialize, SoftBreakInsideEmphasis) {
-    const Doc d = ide::render::parse("*a\\n\\- b*");
+    const Doc d = ide::render::parse("*a\n\\- b*");
     EXPECT_EQ(d, Doc{{P({E({T("a\n- b")})})}});
     const std::string s = ide::render::serialize(d);
     EXPECT_EQ(ide::render::parse(s), d);
