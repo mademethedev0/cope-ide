@@ -21,11 +21,6 @@ android {
         // No instrumentation tests in this phase; unit tests are JVM-side.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        ndk {
-            // Two ABIs only, per the APK budget. Splits below ship them separately.
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
-
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++20"
