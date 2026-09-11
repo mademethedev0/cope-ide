@@ -995,18 +995,19 @@ void appendEscaped(std::string& out, std::string_view t) {
 /// Literal stars are escaped, but structural stars (nested emphasis) and
 /// escaped stars at an edge still collide with an outer star run. Prefer
 /// underscores in those cases when the surrounding context permits them.
-char emphasisChar(std::string_view body, char prevByte) {
+char emphasisChar(std::string_view body, char prevByte, char nextByte) {
     const bool starCollides = prevByte == '*' || body.find('*') != std::string_view::npos;
     if (!starCollides) return '*';
     const bool underscoreOk = !body.empty() && body.front() != '_' && body.back() != '_' &&
                               !isSpaceLike(body.front()) && !isSpaceLike(body.back()) &&
-                              !isAsciiAlnum(prevByte) && prevByte != '_';
+                              !isAsciiAlnum(prevByte) && prevByte != '_' &&
+                              !isAsciiAlnum(nextByte) && nextByte != '_';
     return underscoreOk ? '_' : '*';
 }
 
 void serializeInlines(std::string& out, const std::vector<Inline>& children);
 
-void serializeInline(std::string& out, const Inline& node) {
+void serializeInline(std::string& out, const Inline& node, char nextByte) {
     auto text = [&](const std::string& s) { appendEscaped(out, s); };
     // The byte the node lands next to: '_' emphasis is illegal against an
     // alphanumeric, and a '*' next to a '*' would form a longer run.
@@ -1046,14 +1047,14 @@ void serializeInline(std::string& out, const Inline& node) {
             } else if constexpr (std::is_same_v<T, Emph>) {
                 std::string body;
                 serializeInlines(body, v.children);
-                const char d = emphasisChar(body, prevByte);
+                const char d = emphasisChar(body, prevByte, nextByte);
                 out += d;
                 out += body;
                 out += d;
             } else if constexpr (std::is_same_v<T, Strong>) {
                 std::string body;
                 serializeInlines(body, v.children);
-                const char d = emphasisChar(body, prevByte);
+                const char d = emphasisChar(body, prevByte, nextByte);
                 out.append(2, d);
                 out += body;
                 out.append(2, d);
@@ -1107,7 +1108,17 @@ void serializeInline(std::string& out, const Inline& node) {
 }
 
 void serializeInlines(std::string& out, const std::vector<Inline>& children) {
-    for (const Inline& c : children) serializeInline(out, c);
+    for (size_t i = 0; i < children.size(); ++i) {
+        char nextByte = '\0';
+        for (size_t j = i + 1; j < children.size(); ++j) {
+            if (const auto* text = std::get_if<Text>(&children[j].node)) {
+                if (text->text.empty()) continue;
+                nextByte = text->text.front();
+            }
+            break;
+        }
+        serializeInline(out, children[i], nextByte);
+    }
 }
 
 /// Fenced block emitter shared by CodeBlock / MathBlock / MermaidBlock.

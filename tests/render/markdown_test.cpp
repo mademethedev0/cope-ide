@@ -934,7 +934,39 @@ TEST(MarkdownFuzz, RandomBytesRoundTripStability) {
         const std::string src = randomString(rng);
         const std::string s1 = ide::render::serialize(ide::render::parse(src));
         const std::string s2 = ide::render::serialize(ide::render::parse(s1));
-        EXPECT_EQ(s1, s2) << "round trip unstable, source:\n" << src;
+        if (s1 != s2) {
+            // Minimize only the first counterexample on CI. Bounded deletion
+            // reduction gives actionable ASCII repros instead of binary logs.
+            const auto unstable = [](const std::string& input) {
+                const auto once = ide::render::serialize(ide::render::parse(input));
+                return once != ide::render::serialize(ide::render::parse(once));
+            };
+            std::string reduced = src;
+            size_t attempts = 0;
+            for (size_t width = reduced.size() / 2; width > 0; width /= 2) {
+                for (size_t at = 0; at + width <= reduced.size() && attempts < 2000;) {
+                    std::string candidate = reduced;
+                    candidate.erase(at, width);
+                    ++attempts;
+                    if (unstable(candidate)) reduced = std::move(candidate);
+                    else ++at;
+                }
+            }
+            for (size_t at = 0; at < reduced.size() && attempts < 2500; ++at) {
+                const unsigned char c = static_cast<unsigned char>(reduced[at]);
+                if (c >= 32u && c < 127u) continue;
+                std::string candidate = reduced;
+                candidate[at] = 'x';
+                ++attempts;
+                if (unstable(candidate)) reduced = std::move(candidate);
+            }
+            const auto once = ide::render::serialize(ide::render::parse(reduced));
+            const auto twice = ide::render::serialize(ide::render::parse(once));
+            FAIL() << "iteration " << iter << "; minimized source: "
+                   << ::testing::PrintToString(reduced) << "; once: "
+                   << ::testing::PrintToString(once) << "; twice: "
+                   << ::testing::PrintToString(twice);
+        }
     }
 }
 
