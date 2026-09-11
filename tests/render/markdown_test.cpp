@@ -903,6 +903,18 @@ TEST(MarkdownFuzz, GeneratedRoundTripStability) {
     }
 }
 
+TEST(MarkdownSerialize, BareCarriageReturnsAtEofAreContent) {
+    for (const std::string_view source : {"\r", "\r\r", "text\r", "text\r\r", "text\r\n"}) {
+        SCOPED_TRACE(::testing::PrintToString(source));
+        const Doc doc = ide::render::parse(source);
+        const std::string once = ide::render::serialize(doc);
+        EXPECT_EQ(ide::render::parse(once), doc);
+        EXPECT_EQ(ide::render::serialize(ide::render::parse(once)), once);
+    }
+    EXPECT_EQ(ide::render::parse("\r\r"), Doc{{P({T("\r\r")})}});
+    EXPECT_EQ(ide::render::parse("text\r\n"), Doc{{P({T("text")})}});
+}
+
 TEST(MarkdownSerialize, NestedDelimiterDoesNotCloseOuterEmphasis) {
     for (const std::string_view source : {"_a *b* c_", "_a \\*b_", "_a* b_",
                                           "__a *b* c__", "_a **b** c_", "1*=_y_*"}) {

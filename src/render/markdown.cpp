@@ -91,7 +91,9 @@ std::vector<Line> splitLines(std::string_view src) {
         const size_t nl = src.find('\n', i);
         const size_t end = (nl == std::string_view::npos) ? src.size() : nl;
         std::string_view text = src.substr(start, end - start);
-        if (!text.empty() && text.back() == '\r') text.remove_suffix(1);
+        if (nl != std::string_view::npos && !text.empty() && text.back() == '\r') {
+            text.remove_suffix(1);  // CR belongs to a terminator only in CRLF.
+        }
         lines.push_back(Line{text, start, (nl == std::string_view::npos) ? src.size() : nl + 1});
         if (nl == std::string_view::npos) break;
         i = nl + 1;
