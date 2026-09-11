@@ -168,6 +168,25 @@ private:
         }
         const char d = src_[i_ + 1];
         switch (d) {
+            case 'h':
+                // Oniguruma means hexadecimal, PCRE2 means horizontal space.
+                out_ += inClass_ ? "0-9A-Fa-f" : "[0-9A-Fa-f]";
+                i_ += 2;
+                return;
+            case 'H':
+                // POSIX negation composes correctly inside an existing class.
+                out_ += inClass_ ? "[:^xdigit:]" : "[^0-9A-Fa-f]";
+                i_ += 2;
+                return;
+            case 'Q': {
+                // Quoted text is opaque: never translate escapes or brackets
+                // inside it. An unclosed quote extends to the pattern end.
+                const size_t end = src_.find("\\E", i_ + 2);
+                const size_t stop = end == std::string_view::npos ? src_.size() : end + 2;
+                out_.append(src_.substr(i_, stop - i_));
+                i_ = stop;
+                return;
+            }
             case 'g':
                 stepG();
                 return;
@@ -295,7 +314,7 @@ private:
         const std::string_view inner = src_.substr(j + 1, e - j - 1);
         bool numeric = !inner.empty();
         size_t s = 0;
-        if (inner[0] == '+' || inner[0] == '-') s = 1;
+        if (!inner.empty() && (inner[0] == '+' || inner[0] == '-')) s = 1;
         for (size_t k = s; k < inner.size(); ++k) {
             if (!isDigitChar(inner[k])) numeric = false;
         }

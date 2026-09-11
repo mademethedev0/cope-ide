@@ -86,6 +86,44 @@ TEST(Pcre2EngineTest, MatchOffsetsAreAbsoluteBytes) {
     EXPECT_EQ(m2->begin, size_t(6));
 }
 
+TEST(Pcre2EngineTest, OnigurumaHexClassesAreNotHorizontalWhitespace) {
+    Pcre2RegexEngine engine;
+    for (const std::string pattern : {R"(^\h+$)", R"(^[\h]+$)"}) {
+        SCOPED_TRACE(pattern);
+        const auto re = mustCompile(engine, pattern);
+        ASSERT_NE(re, nullptr);
+        EXPECT_TRUE(re->search("09aAfF", 0).has_value());
+        EXPECT_FALSE(re->search(" \t", 0).has_value());
+        EXPECT_FALSE(re->search("G", 0).has_value());
+    }
+    for (const std::string pattern : {R"(^\H+$)", R"(^[\H]+$)"}) {
+        SCOPED_TRACE(pattern);
+        const auto re = mustCompile(engine, pattern);
+        ASSERT_NE(re, nullptr);
+        EXPECT_TRUE(re->search("G_ \t", 0).has_value());
+        EXPECT_FALSE(re->search("aF09", 0).has_value());
+    }
+    const auto negative = mustCompile(engine, R"(^[^\H]+$)");
+    ASSERT_NE(negative, nullptr);
+    EXPECT_TRUE(negative->search("deadBEEF", 0).has_value());
+    EXPECT_FALSE(negative->search("g ", 0).has_value());
+    const auto unionClass = mustCompile(engine, R"(^[x\h]+$)");
+    ASSERT_NE(unionClass, nullptr);
+    EXPECT_TRUE(unionClass->search("xF0", 0).has_value());
+}
+
+TEST(Pcre2EngineTest, HexTranslationPreservesEscapedAndQuotedText) {
+    Pcre2RegexEngine engine;
+    const auto escaped = mustCompile(engine, R"(^\\h$)");
+    ASSERT_NE(escaped, nullptr);
+    EXPECT_TRUE(escaped->search(R"(\h)", 0).has_value());
+    const auto quoted = mustCompile(engine, R"(^\Q[\h\H\E\h$)");
+    ASSERT_NE(quoted, nullptr);
+    EXPECT_TRUE(quoted->search(R"([\h\HF)", 0).has_value());
+    EXPECT_FALSE(quoted->search(R"([\h\H )", 0).has_value());
+    EXPECT_EQ(engine.compile(R"(\g<>)"), nullptr);
+}
+
 TEST(Pcre2EngineTest, LookbehindMultichar) {
     Pcre2RegexEngine engine;
     // Multi-character lookbehind: rejected outright by std::regex.

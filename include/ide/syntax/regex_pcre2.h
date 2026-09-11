@@ -32,6 +32,9 @@ namespace ide::syntax {
 ///   \uXXXX / \u{...}               -> \x{...} (PCRE2 has no \u escape)
 ///   \o{...}                        -> \x{...}
 ///   \O (any char incl newline)     -> [\s\S]
+///   \h / \H (hex / non-hex)       -> [0-9A-Fa-f] / [^0-9A-Fa-f]
+///                                    class bodies use ranges / [:^xdigit:]
+///   \Q...\E quoted text           -> copied opaquely, never translated
 ///   (?m) (?-m) (Onig: dot-all)     -> (?s) (?-s) (PCRE2: dot-all)
 ///   \p{alpha} \p{word} & co (POSIX long property names, unknown to PCRE2's
 ///                                    \p{...}) -> [[:alpha:]] / [:alpha:]
