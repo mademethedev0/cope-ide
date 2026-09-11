@@ -903,6 +903,31 @@ TEST(MarkdownFuzz, GeneratedRoundTripStability) {
     }
 }
 
+TEST(MarkdownSerialize, NestedDelimiterDoesNotCloseOuterEmphasis) {
+    for (const std::string_view source : {"_a *b* c_", "_a \\*b_", "_a* b_",
+                                          "__a *b* c__", "_a **b** c_"}) {
+        SCOPED_TRACE(source);
+        const Doc doc = ide::render::parse(source);
+        const std::string once = ide::render::serialize(doc);
+        EXPECT_EQ(ide::render::parse(once), doc);
+        EXPECT_EQ(ide::render::serialize(ide::render::parse(once)), once);
+    }
+}
+
+TEST(MarkdownParse, EmphasisCloserScansOnlyActualEscapes) {
+    // A backslash before whitespace is literal, not an escape. The old closer
+    // scan skipped the whitespace unconditionally, unlike the content parser.
+    // Cover literal backslashes before ordinary characters and punctuation too.
+    for (const std::string_view source : {"*a\\ b*", "_a\\ b_", "**a\\ b**",
+                                          "*a\\q*", "*a\\!*", "*a\\\\*"}) {
+        SCOPED_TRACE(source);
+        const Doc doc = ide::render::parse(source);
+        const std::string once = ide::render::serialize(doc);
+        EXPECT_EQ(ide::render::parse(once), doc);
+        EXPECT_EQ(ide::render::serialize(ide::render::parse(once)), once);
+    }
+}
+
 TEST(MarkdownFuzz, RandomBytesRoundTripStability) {
     Rng rng(0xDEAD0002ull);
     for (int iter = 0; iter < 1500; ++iter) {

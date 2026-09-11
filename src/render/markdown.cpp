@@ -393,7 +393,7 @@ size_t findClosingRun(std::string_view text, char c, size_t from, int minLen, in
     const size_t n = text.size();
     size_t p = from;
     while (p < n) {
-        if (text[p] == '\\') {
+        if (text[p] == '\\' && p + 1 < n && isPunct(text[p + 1])) {
             p += 2;
             continue;
         }
@@ -991,16 +991,12 @@ void appendEscaped(std::string& out, std::string_view t) {
     }
 }
 
-/// Picks the delimiter char for an emphasis-like node. '*' is the default;
-/// '_' is used when '*' would merge with an adjacent '*' into a longer run
-/// (nested emphasis at a boundary), because a run of N delimiters is
-/// ambiguous on re-parse. '_' is only legal when neither side touches an
-/// alphanumeric (there is no intraword underscore emphasis) and the body does
-/// not itself start or end with '_'. When neither char is clean, '*' is
-/// emitted anyway and serialize()'s fixed-point loop makes the result stable.
+/// Picks a delimiter that cannot be mistaken for a closer inside the body.
+/// Literal stars are escaped, but structural stars (nested emphasis) and
+/// escaped stars at an edge still collide with an outer star run. Prefer
+/// underscores in those cases when the surrounding context permits them.
 char emphasisChar(std::string_view body, char prevByte) {
-    const bool starCollides =
-        prevByte == '*' || (!body.empty() && (body.front() == '*' || body.back() == '*'));
+    const bool starCollides = prevByte == '*' || body.find('*') != std::string_view::npos;
     if (!starCollides) return '*';
     const bool underscoreOk = !body.empty() && body.front() != '_' && body.back() != '_' &&
                               !isSpaceLike(body.front()) && !isSpaceLike(body.back()) &&
