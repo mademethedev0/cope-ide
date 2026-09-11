@@ -1,0 +1,53 @@
+{
+  "cases": [
+    {
+      "name": "kotlin-interpolation",
+      "scope": "source.kotlin",
+      "extension": "kt",
+      "source": "data class Person(val name: String)\nfun greet(person: Person): String {\n    /* opening\n       closing */\n    val café = \"hello ${person.name.uppercase()}\"\n    val block = \"\"\"first\n        ${person.name}\n        last\"\"\"\n    return café + block\n}\n",
+      "mutations": [{"find": "*/", "replace": ""}, {"find": "${person.name}", "replace": "${person."}]
+    },
+    {
+      "name": "cpp-raw-template",
+      "scope": "source.cpp",
+      "extension": "cpp",
+      "source": "#include <string_view>\ntemplate<class T> struct Box { T value; };\nauto message = R\"tag(first\n/* not a comment */\nlast)tag\";\n/* opening\n   closing */\nBox<int> box{42};\nauto lambda = [box]() { return box.value; };\n",
+      "mutations": [{"find": ")tag\"", "replace": ")other\""}, {"find": "*/\nBox", "replace": "\nBox"}]
+    },
+    {
+      "name": "python-fstrings-unicode",
+      "scope": "source.python",
+      "extension": "py",
+      "source": "def greet(name: str):\n    café = f\"hello {name.upper():>8}\"\n    text = \"\"\"first\n    middle\n    last\"\"\"\n    combining = \"é 👩‍💻\"\n    return café, text, combining\n\nresult = greet(\"world\")\n",
+      "mutations": [{"find": "last\"\"\"", "replace": "last"}, {"find": "{name.upper():>8}", "replace": "{name."}]
+    },
+    {
+      "name": "tsx-nested-expressions",
+      "scope": "source.tsx",
+      "extension": "tsx",
+      "source": "type Props = { name: string };\nexport function Greeting({ name }: Props) {\n  /* opening\n     closing */\n  const label = `hello ${name.toUpperCase()}`;\n  return <section title={label}>\n    <strong>{name}</strong>\n    {name.length > 0 ? <span>ready</span> : null}\n  </section>;\n}\n",
+      "mutations": [{"find": "*/", "replace": ""}, {"find": "${name.toUpperCase()}", "replace": "${name."}]
+    },
+    {
+      "name": "html-embedded-css",
+      "scope": "text.html.basic",
+      "extension": "html",
+      "source": "<!doctype html>\n<html>\n<style>\n.card { color: red; }\n/* opening\n   closing */\n.card::before { content: \"hello\"; }\n</style>\n<body><div class=\"card\">hello &amp; goodbye</div></body>\n</html>\n",
+      "mutations": [{"find": "</style>", "replace": ""}, {"find": "*/", "replace": ""}]
+    },
+    {
+      "name": "markdown-fenced-languages",
+      "scope": "text.html.markdown",
+      "extension": "md",
+      "source": "# Sample\n\nA **bold** word and `inline code`.\n\n```python\ndef answer():\n    return f\"value {42}\"\n```\n\n~~~css\n.card { color: red; }\n~~~\n\nAfter the fences.\n",
+      "mutations": [{"find": "```\n\n~~~", "replace": "\n\n~~~"}, {"find": "~~~\n\nAfter", "replace": "\n\nAfter"}]
+    },
+    {
+      "name": "javascript-crlf-incomplete",
+      "scope": "source.js",
+      "extension": "js",
+      "source": "const café = 'hello';\r\n/* opening\r\n   closing */\r\nconst value = `first\r\n${café}\r\nlast`;\r\nfunction unfinished(input) {\r\n  return input?.map(item => ({ value: item",
+      "mutations": [{"find": "*/", "replace": ""}, {"find": "last`", "replace": "last"}]
+    }
+  ]
+}

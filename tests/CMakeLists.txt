@@ -33,6 +33,7 @@ add_executable(cope_tests ${COPE_TEST_SOURCES})
 target_compile_definitions(cope_tests PRIVATE
     COPE_THEMES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../textmate/themes"
     COPE_GRAMMARS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../textmate/grammars"
+    COPE_HIGHLIGHT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/highlight"
 )
 
 target_link_libraries(cope_tests PRIVATE GTest::gtest_main cope_warnings)
@@ -47,4 +48,6 @@ foreach(_cope_module IN ITEMS ide_text ide_syntax ide_theme ide_host ide_highlig
 endforeach()
 
 include(GoogleTest)
-gtest_discover_tests(cope_tests)
+# Bound individual tests on CI, including real-grammar edit replay. This is a
+# runner safety net, not a substitute for runtime regex work budgets.
+gtest_discover_tests(cope_tests PROPERTIES TIMEOUT 120)
