@@ -135,16 +135,20 @@ class DeriveTest {
 
     @Test
     fun `a distinct sidebar is left alone`() {
+        // 0x252526 differs visually but not by the contract's 0.02 linear
+        // luminance threshold. Use a genuinely above-threshold fixture.
+        val sidebar = 0xFF484848.toInt()
+        assertTrue(abs(Derive.luma(sidebar) - Derive.luma(0xFF1E1E1E.toInt())) >= 0.02f)
         val colors = Derive.from(
             snapshot(
                 isDark = true,
                 UiKeys.EDITOR_BG to 0xFF1E1E1E.toInt(),
                 UiKeys.EDITOR_FG to 0xFFD4D4D4.toInt(),
-                UiKeys.SIDEBAR_BG to 0xFF252526.toInt(),
+                UiKeys.SIDEBAR_BG to sidebar,
             ),
         )
         assertFalse(colors.surfaceWasSynthesized)
-        assertEquals(0xFF252526.toInt(), colors.surface)
+        assertEquals(sidebar, colors.surface)
     }
 
     // --- the readability guard ----------------------------------------------

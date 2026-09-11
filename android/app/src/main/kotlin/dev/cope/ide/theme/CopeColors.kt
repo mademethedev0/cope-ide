@@ -169,7 +169,14 @@ public object Derive {
         if (abs(luma(surface) - luma(editorBg)) < MIN_SURFACE_DELTA) {
             surface = mix(editorBg, toward, if (isDark) 0.40f else 0.08f)
             if (abs(luma(surface) - luma(editorBg)) < MIN_SURFACE_DELTA) {
-                surface = mix(editorBg, away, 0.08f)
+                // sRGB mixing is not linear in luminance; a fixed 8% blend
+                // can still miss the threshold. Search a bounded set ending
+                // at the farther endpoint, which always clears this delta.
+                val endpoint = if (luma(editorBg) < 0.5f) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+                for (step in 1..20) {
+                    surface = mix(editorBg, endpoint, step / 20f)
+                    if (abs(luma(surface) - luma(editorBg)) >= MIN_SURFACE_DELTA) break
+                }
             }
             synthesized = true
         }

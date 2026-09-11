@@ -12,10 +12,10 @@ package dev.cope.ide.ui
  * otherwise, higher being better.
  *
  * Scoring, in order of weight:
- *   * a hit right after a word boundary (space, `/`, `_`, `.`, `-`) is worth most,
+ *   * contiguous hits have the strongest bonus, so literal substrings beat
+ *     otherwise similar scattered subsequences;
+ *   * word boundaries (space, `/`, `_`, `.`, `-`) reward initialisms,
  *     so "gtl" finds "Go to line" rather than "Toggle indent guides";
- *   * a hit immediately after the previous one is worth nearly as much, so a
- *     literal substring beats a scattered subsequence;
  *   * shorter candidates win ties, so "Save" beats "Save as…" for "save".
  *
  * An empty query matches everything with score 1, which keeps the initial list in
@@ -23,9 +23,10 @@ package dev.cope.ide.ui
  */
 public fun fuzzyScore(candidate: String, query: String): Int {
     if (query.isEmpty()) return 1
-    var score = 0
+    var score = 0L
     var at = 0
     var previousMatch = -2
+    var matched = false
     for (needle in query) {
         if (needle == ' ') continue
         val lower = needle.lowercaseChar()
@@ -39,13 +40,15 @@ public fun fuzzyScore(candidate: String, query: String): Int {
             i++
         }
         if (found < 0) return 0
+        matched = true
         score += 1
-        if (found == previousMatch + 1) score += 3
+        if (found == previousMatch + 1) score += 5
         if (found == 0 || isBoundary(candidate[found - 1])) score += 4
         previousMatch = found
         at = found + 1
     }
-    return score * 100 - candidate.length
+    if (!matched) return 1 // spaces-only queries are empty after normalization
+    return (score * 100L - candidate.length).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
 }
 
 private fun isBoundary(c: Char): Boolean =

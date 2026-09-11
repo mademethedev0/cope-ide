@@ -75,6 +75,17 @@ class FuzzyTest {
         assertTrue("$boundary should beat $inside", boundary > inside)
     }
 
+    @Test
+    fun `spaces-only queries have the empty-query score`() {
+        assertEquals(1, fuzzyScore("anything", "   "))
+        assertEquals(1, fuzzyScore("", " "))
+    }
+
+    @Test
+    fun `a long matching candidate still has a positive score`() {
+        assertTrue(fuzzyScore("a" + "z".repeat(2000), "a") > 0)
+    }
+
     // --- path normalisation -------------------------------------------------
 
     @Test
