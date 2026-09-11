@@ -36,7 +36,14 @@ public class MainActivity : ComponentActivity() {
     private val createDocument = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
     ) { uri: Uri? ->
-        if (uri != null) state.completeSaveAs(uri)
+        if (uri != null) state.completeSaveAs(uri) else state.cancelSaveAs()
+    }
+
+    private val storagePermission = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        state.refreshStorageMode()
+        state.bump()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,10 +60,23 @@ public class MainActivity : ComponentActivity() {
             openDocument.launch(arrayOf("*/*"))
         }
         state.onCreateDocument = { suggestedName -> createDocument.launch(suggestedName) }
+        state.onRequestStoragePermission = {
+            storagePermission.launch(arrayOf(
+                android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            ))
+        }
         state.start()
         handleIntent(intent)
 
         setContent {
+            androidx.compose.runtime.SideEffect {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.isAppearanceLightStatusBars = !state.colors.isDark
+                controller.isAppearanceLightNavigationBars = !state.colors.isDark
+                window.navigationBarColor = state.colors.surface
+                window.statusBarColor = state.colors.surface
+            }
             CopeTheme(colors = state.colors, fonts = state.fonts) {
                 CopeScreen(state)
             }

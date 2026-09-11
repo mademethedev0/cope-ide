@@ -31,7 +31,7 @@ source.cadence	cadence.json
 source.cairo0	cairo.json	
 source.clar	clarity.json	
 source.clojure	clojure.json	
-source.cmake	cmake.json	cmake,txt
+source.cmake	cmake.json	cmake,cmakelists.txt
 source.cobol	cobol.json	ccp,scbl,cobol,cbl,cblle,cblsrce,cblcpy,lks,pdv,cpy,copybook,cobcopy,fd,sel,scb,sqlcblle,cob,dds,def,src,ss,wks,bib,pco
 source.coffee	coffee.json	
 source.commonlisp	common-lisp.json	lisp,lsp,l,cl,asd,asdf
@@ -56,7 +56,7 @@ source.dockerfile	docker.json
 source.dotenv	dotenv.json	
 source.elixir	elixir.json	ex,exs
 source.elm	elm.json	elm
-source.emacs.lisp	emacs-lisp.json	el,elc,eld,spacemacs,_emacs,emacs,desktop,abbrev_defs,ede,cask,gnus,viper
+source.emacs.lisp	emacs-lisp.json	el,elc,eld,spacemacs,_emacs,emacs,emacs.desktop,abbrev_defs,project.ede,cask,gnus,viper
 source.erlang	erlang.json	erl,escript,hrl,xrl,yrl
 source.fish	fish.json	
 source.fnl	fennel.json	
@@ -70,7 +70,7 @@ source.gdshader	gdshader.json	gdshader
 source.genie	genie.json	gs
 source.gjs	glimmer-js.json	
 source.gleam	gleam.json	gleam
-source.glsl	glsl.json	vs,fs,gs,vsh,fsh,gsh,vshader,fshader,gshader,vert,frag,geom,glsl
+source.glsl	glsl.json	vs,fs,gs,vsh,fsh,gsh,vshader,fshader,gshader,vert,frag,geom,f.glsl,v.glsl,g.glsl
 source.gnuplot	gnuplot.json	gp,plt,plot,gnuplot
 source.go	go.json	
 source.graphql	graphql.json	graphql,graphqls,gql,graphcool
@@ -117,7 +117,7 @@ source.mojo	mojo.json
 source.move	move.json	
 source.narrat	narrat.json	
 source.nextflow	nextflow.json	
-source.nginx	nginx.json	erb,conf,ngx,types,fastcgi_params,scgi_params,uwsgi_params
+source.nginx	nginx.json	conf.erb,conf,ngx,nginx.conf,mime.types,fastcgi_params,scgi_params,uwsgi_params
 source.nim	nim.json	nim
 source.nix	nix.json	nix
 source.nushell	nushell.json	
@@ -169,7 +169,7 @@ source.splunk_search	splunk.json	splunk,spl
 source.sql	sql.json	
 source.ssh-config	ssh-config.json	ssh_config,ssh/config,sshd_config
 source.stata	stata.json	do,ado,mata
-source.stylus	stylus.json	styl,stylus
+source.stylus	stylus.json	styl,stylus,css.styl,css.stylus
 source.svelte	svelte.json	svelte
 source.swift	swift.json	swift
 source.systemd	systemd.json	
@@ -206,7 +206,7 @@ source.zig	zig.json	zig,zon
 template.blocks.ng	angular-template-blocks.json	
 template.let.ng	angular-let-declaration.json	
 template.ng	angular-template.json	
-text.asciidoc	asciidoc.json	ad,asc,adoc,asciidoc,txt
+text.asciidoc	asciidoc.json	ad,asc,adoc,asciidoc,adoc.txt
 text.aspnetcorerazor	razor.json	razor,cshtml
 text.beancount	beancount.json	beancount
 text.bibtex	bibtex.json	
@@ -215,19 +215,19 @@ text.csv	csv.json	csv
 text.gherkin.feature	gherkin.json	feature
 text.git-commit	git-commit.json	
 text.git-rebase	git-rebase.json	
-text.haml	haml.json	haml
+text.haml	haml.json	haml,html.haml
 text.html.basic	html.json	
 text.html.derivative	html-derivative.json	
 text.html.derivative.ng	angular-html.json	
 text.html.edge	edge.json	
-text.html.erb	erb.json	erb,rhtml
+text.html.erb	erb.json	erb,rhtml,html.erb
 text.html.handlebars	handlebars.json	
 text.html.jinja	jinja-html.json	
 text.html.liquid	liquid.json	liquid
 text.html.markdown	markdown.json	
-text.html.php.blade	blade.json	php
+text.html.php.blade	blade.json	blade.php
 text.html.soy	soy.json	soy
-text.html.twig	twig.json	twig
+text.html.twig	twig.json	twig,html.twig
 text.html.vue-html	vue-html.json	
 text.log	log.json	log
 text.markdown.mdc.standalone	mdc.json	

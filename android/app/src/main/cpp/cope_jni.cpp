@@ -107,6 +107,7 @@ public:
     const std::string& name() const noexcept { return name_; }
     const std::string& path() const noexcept { return path_; }
     void setPath(std::string path) { path_ = std::move(path); }
+    void setName(std::string name);
 
     bool dirty() const noexcept { return doc_.version() != savedVersion_; }
     void markSaved() noexcept { savedVersion_ = doc_.version(); }
@@ -231,40 +232,27 @@ public:
             }
         }
         applyCanonicalExtensions();
+        extToScope_.erase("txt");
     }
 
     /// Scope name for a file name, "" when nothing claims it. Extension lookup
     /// only; the registry's own map is populated lazily from the same table.
     std::string scopeForFile(std::string_view name) const {
-        const size_t dot = name.find_last_of('.');
-        if (dot == std::string_view::npos || dot + 1u == name.size()) {
-            return std::string();
-        }
-        std::string ext(name.substr(dot + 1u));
+        const size_t slash = name.find_last_of('/');
+        std::string ext(name.substr(slash == std::string_view::npos ? 0 : slash + 1u));
         for (char& c : ext) {
             if (c >= 'A' && c <= 'Z') {
                 c = static_cast<char>(c - 'A' + 'a');
             }
         }
-        const auto it = extToScope_.find(ext);
-        return it == extToScope_.end() ? std::string() : it->second;
-    }
-
-    /// Makes the registry able to resolve `name`'s extension. Must run before a
-    /// Highlighter is constructed for that file.
-    void ensureExtensionMapped(std::string_view name) {
-        const std::string scope = scopeForFile(name);
-        if (scope.empty()) {
-            return;
+        while (!ext.empty()) {
+            const auto it = extToScope_.find(ext);
+            if (it != extToScope_.end()) return it->second;
+            const size_t dot = ext.find('.');
+            if (dot == std::string::npos) break;
+            ext.erase(0, dot + 1u);
         }
-        const size_t dot = name.find_last_of('.');
-        std::string ext(name.substr(dot + 1u));
-        for (char& c : ext) {
-            if (c >= 'A' && c <= 'Z') {
-                c = static_cast<char>(c - 'A' + 'a');
-            }
-        }
-        registry_.mapExtension(ext, scope);
+        return {};
     }
 
     /// Replaces the theme, keeping every live Highlighter pointing at a live
@@ -381,9 +369,10 @@ Session::Session(Engine& owner, std::string bytes, std::string name)
 Session::~Session() { owner_.removeSession(this); }
 
 void Session::initHighlighter(size_t byteSize) {
-    owner_.ensureExtensionMapped(name_);
     ide::highlight::FileInfo info;
+    const std::string selected = owner_.scopeForFile(name_);
     info.name = name_;
+    info.grammarScope = selected;
     info.byteSize = byteSize;
     info.lineCount = static_cast<size_t>(doc_.lineCount());
     highlighter_.emplace(owner_.registry(), owner_.regex(), owner_.theme(), info);
@@ -411,6 +400,14 @@ void Session::initHighlighter(size_t byteSize) {
     stateVersion_ = doc_.version();
     savedVersion_ = doc_.version();
     owner_.addSession(this);
+}
+
+void Session::setName(std::string name) {
+    const auto saved = savedVersion_;
+    owner_.removeSession(this);
+    name_ = std::move(name);
+    initHighlighter(doc_.size());
+    savedVersion_ = saved;
 }
 
 ide::highlight::LineState Session::stateBefore(int64_t line) {
@@ -1309,6 +1306,17 @@ JNIEXPORT jstring JNICALL Java_dev_cope_ide_core_CopeNative_scopesAt(JNIEnv* env
     COPE_GUARD_END(nullptr)
 }
 
+JNIEXPORT void JNICALL Java_dev_cope_ide_core_CopeNative_setDocumentName(
+    JNIEnv* env, jclass, jlong engineHandle, jlong sessionHandle, jstring name) {
+    COPE_GUARD_BEGIN
+    Engine* engine = engineOf(engineHandle);
+    Session* session = sessionOf(sessionHandle);
+    if (engine == nullptr || session == nullptr || name == nullptr) return;
+    std::lock_guard<std::mutex> lock(engine->mutex());
+    session->setName(toUtf8(env, name));
+    COPE_GUARD_END_VOID
+}
+
 /// Forces a tier: 0 = automatic, 1 = grammar, 2 = fallback, 3 = plain.
 JNIEXPORT void JNICALL Java_dev_cope_ide_core_CopeNative_forceTier(JNIEnv*, jclass,
                                                                    jlong engineHandle,
@@ -1331,7 +1339,8 @@ JNIEXPORT void JNICALL Java_dev_cope_ide_core_CopeNative_forceTier(JNIEnv*, jcla
             session->highlighter().forceTier(ide::highlight::Tier::kPlain);
             break;
         default:
-            break;  // 0 == leave the probe's decision alone
+            session->setName(session->name());
+            break;
     }
     session->invalidateFrom(0);
     COPE_GUARD_END_VOID

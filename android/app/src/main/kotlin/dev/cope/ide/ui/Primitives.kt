@@ -37,6 +37,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.composed
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -359,7 +362,7 @@ public fun PillButton(
     val colors = LocalCopeColors.current
     Box(
         modifier
-            .height(32.dp)
+            .heightIn(min = 40.dp)
             .background(Color(if (emphasised) colors.accent else colors.keyBg))
             .clickable { onClick() }
             .padding(horizontal = 12.dp),
@@ -375,7 +378,7 @@ public fun PillButton(
 
 /** Black or white, whichever is readable on `background`. */
 public fun contrastOn(background: Int): Int =
-    if (Derive.luma(background) > 0.45f) 0xFF101010.toInt() else 0xFFFFFFFF.toInt()
+    Derive.bestTextOn(background)
 
 @Composable
 public fun HDivider(color: Int, modifier: Modifier = Modifier) {
@@ -448,12 +451,16 @@ public fun Modifier.semanticsLabel(description: String): Modifier =
 public fun Modifier.verticalDragHandle(
     onDrag: (Float) -> Unit,
     onRelease: () -> Unit,
-): Modifier = this.pointerInput(Unit) {
-    detectVerticalDragGestures(
-        onDragEnd = { onRelease() },
-        onDragCancel = { onRelease() },
-        onVerticalDrag = { _, delta -> onDrag(delta) },
-    )
+): Modifier = this.composed {
+    val drag by rememberUpdatedState(onDrag)
+    val release by rememberUpdatedState(onRelease)
+    pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onDragEnd = { release() },
+            onDragCancel = { release() },
+            onVerticalDrag = { change, delta -> change.consume(); drag(delta) },
+        )
+    }
 }
 
 @Composable
@@ -572,7 +579,8 @@ public fun MenuItem(
     ) {
         if (icon != null) CopeIconGlyph(icon, tint, sizeDp = 15)
         Label(text, tint, modifier = Modifier.weight(1f))
-        if (value != null) Label(value, colors.dim, sizeSp = CopeDimens.TEXT_SMALL_SP)
+        if (value != null) Label(value, Derive.textOn(colors.dim, colors.menuBg),
+            modifier = Modifier.weight(1f), sizeSp = CopeDimens.TEXT_SMALL_SP, maxLines = 2)
     }
 }
 
@@ -654,9 +662,9 @@ public fun ToggleRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Label(text, colors.menuFg)
+            Label(text, colors.menuFg, maxLines = 2)
             if (detail != null) {
-                Label(detail, colors.dim, sizeSp = CopeDimens.TEXT_TINY_SP, maxLines = 2)
+                Label(detail, Derive.textOn(colors.dim, colors.menuBg), sizeSp = CopeDimens.TEXT_TINY_SP, maxLines = Int.MAX_VALUE)
             }
         }
         Box(
@@ -697,18 +705,18 @@ public fun StepperRow(
             .padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Label(text, colors.menuFg, modifier = Modifier.weight(1f))
+        Label(text, colors.menuFg, modifier = Modifier.weight(1f), maxLines = 3)
         IconButton(
             icon = Icon.ARROW_LEFT,
             description = "Decrease $text",
             onClick = onDecrease,
             enabled = canDecrease,
             sizeDp = 14,
-            touchDp = 40,
+            touchDp = 44,
             tint = colors.menuFg,
         )
         Box(Modifier.width(46.dp), contentAlignment = Alignment.Center) {
-            Label(value, colors.accent, bold = true)
+            Label(value, colors.menuFg, bold = true)
         }
         IconButton(
             icon = Icon.ARROW_RIGHT,
@@ -716,7 +724,7 @@ public fun StepperRow(
             onClick = onIncrease,
             enabled = canIncrease,
             sizeDp = 14,
-            touchDp = 40,
+            touchDp = 44,
             tint = colors.menuFg,
         )
     }

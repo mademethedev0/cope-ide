@@ -39,9 +39,19 @@ public class AssetIndex(
 
     /** Language label for the status strip: "C++", "Python", ... or "Plain text". */
     public fun languageOf(fileName: String): String {
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        val scope = extensionToScope[ext] ?: return "Plain text"
+        val scope = scopeOf(fileName) ?: return "Plain text"
         return LANGUAGE_NAMES[scope] ?: prettyScope(scope)
+    }
+
+    public fun scopeOf(fileName: String): String? {
+        val base = fileName.substringAfterLast('/').lowercase()
+        extensionToScope[base]?.let { return it }
+        var suffix = base
+        while ('.' in suffix) {
+            suffix = suffix.substringAfter('.')
+            extensionToScope[suffix]?.let { return it }
+        }
+        return null
     }
 
     private fun prettyScope(scope: String): String =
@@ -53,6 +63,7 @@ public class AssetIndex(
     public companion object {
         /** Names worth spelling correctly; everything else derives from the scope. */
         private val LANGUAGE_NAMES: Map<String, String> = mapOf(
+            "source.cmake" to "CMake",
             "source.c" to "C",
             "source.cpp" to "C++",
             "source.cs" to "C#",
@@ -155,6 +166,8 @@ public class AssetIndex(
             for ((ext, scope) in CANONICAL_EXTENSIONS) {
                 if (knownScopes.contains(scope)) extensions[ext] = scope
             }
+
+            extensions.remove("txt")
 
             val themes = ArrayList<ThemeEntry>()
             for (line in themesTsv.lineSequence()) {

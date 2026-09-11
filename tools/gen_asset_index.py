@@ -177,10 +177,8 @@ def gen_grammars():
                 if not isinstance(item, str):
                     continue
                 ext = item.strip().lstrip(".").lower()
-                # A fileTypes entry is sometimes a whole filename ("Makefile").
-                # Extension matching only wants the last dotted component.
-                if "." in ext:
-                    ext = ext.rsplit(".", 1)[1]
+                # Preserve whole filenames and compound suffixes. CMakeLists.txt
+                # must never become a claim on every plain .txt document.
                 if ext and ext not in exts:
                     exts.append(ext)
         # inline.* fragment grammars must never claim an extension: es-tag-css

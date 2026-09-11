@@ -77,6 +77,29 @@ TEST(HighlighterTierTest, AGrammarThatResolvesSelectsTierOne) {
     EXPECT_EQ(harness.h().grammarScope(), "source.small");
 }
 
+TEST(HighlighterTierTest, ExplicitScopePreservesTheFilenameFallbackProfile) {
+    Harness harness(withGrammar());
+    ide::highlight::FileInfo info;
+    info.name = "notes.py";
+    info.grammarScope = "source.small";
+    ide::highlight::Highlighter selected(harness.registry(), harness.engine(), harness.theme(), info);
+    EXPECT_EQ(selected.grammarScope(), "source.small");
+    EXPECT_EQ(selected.profile().name, ide::highlight::profileForFileName("notes.py").name);
+}
+
+TEST(HighlighterTierTest, ExplicitEmptyScopeCannotBeHijackedByARegisteredExtension) {
+    Harness harness(withGrammar());
+    ide::highlight::FileInfo info;
+    info.name = "a.c";
+    info.grammarScope = std::string_view{};
+    ide::highlight::Highlighter plain(harness.registry(), harness.engine(), harness.theme(), info);
+    EXPECT_FALSE(plain.hasGrammar());
+    EXPECT_EQ(plain.profile().name, "c-family");
+    info.grammarScope = "source.missing";
+    ide::highlight::Highlighter missing(harness.registry(), harness.engine(), harness.theme(), info);
+    EXPECT_FALSE(missing.hasGrammar());
+}
+
 TEST(HighlighterTierTest, NoGrammarSelectsTierTwo) {
     Config config;
     config.fileName = "a.c";

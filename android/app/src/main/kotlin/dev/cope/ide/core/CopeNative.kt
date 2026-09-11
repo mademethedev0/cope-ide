@@ -44,6 +44,7 @@ public object CopeNative {
     external fun openBytes(handle: Long, name: String, bytes: ByteArray?): Long
     external fun closeSession(engine: Long, session: Long)
     external fun sessionInfo(engine: Long, session: Long): LongArray?
+    external fun setDocumentName(engine: Long, session: Long, name: String)
     external fun viewport(engine: Long, session: Long, firstLine: Int, count: Int): ByteBuffer?
     external fun lineBytes(engine: Long, session: Long, line: Int): ByteArray?
     external fun textRange(engine: Long, session: Long, offset: Long, length: Long): ByteArray?

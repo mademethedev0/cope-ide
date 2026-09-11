@@ -80,6 +80,9 @@ public class CopeEngine private constructor(private var handle: Long) {
         )
     }
 
+    internal fun currentPalette(): IntArray =
+        if (handle == 0L) IntArray(0) else CopeNative.palette(handle) ?: IntArray(0)
+
     public fun readAsset(path: String): ByteArray? =
         if (handle == 0L) null else CopeNative.readAsset(handle, path)
 
@@ -208,6 +211,14 @@ public class CopeDocument internal constructor(
         canUndo = info[7] != 0L
         canRedo = info[8] != 0L
     }
+
+    public fun setHighlightName(name: String) {
+        if (session == 0L) return
+        CopeNative.setDocumentName(engineHandle, session, name)
+        refresh()
+    }
+
+    public fun currentPalette(): IntArray = engine.currentPalette()
 
     public fun viewport(firstLine: Int, count: Int): Viewport? {
         if (session == 0L || count <= 0) return null

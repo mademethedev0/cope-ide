@@ -434,6 +434,11 @@ public class CopeEditorView(context: Context) : View(context) {
             return cachedViewport
         }
         val fetched = document.viewport(first, count) ?: return cachedViewport
+        // Styles are interned lazily while tokenizing. The startup palette only
+        // contains style zero; fetch additions before drawing their IDs.
+        if (fetched.spanStyle.any { it >= palette.size / 3 }) {
+            palette = document.currentPalette()
+        }
         cachedViewport = fetched
         cachedFirstLine = first
         cachedCount = count
@@ -602,6 +607,8 @@ public class CopeEditorView(context: Context) : View(context) {
                 canvas.drawRect(gutterWidth, top, width.toFloat(), top + lineHeight, fillPaint)
             }
 
+            drawSpanBackgrounds(canvas, viewport, i, textLeft, top)
+
             // selection, then the other occurrences of the selected word
             if (selEnd > selStart) {
                 val lineEnd = lineStart + layout.byteLength
@@ -726,10 +733,6 @@ public class CopeEditorView(context: Context) : View(context) {
                 if (x > width) break
                 if (x + runWidth < gutterWidth) continue
 
-                if ((paletteFlags(styleId) and ThemeSnapshot.FLAG_HAS_BG) != 0) {
-                    fillPaint.color = paletteBg(styleId)
-                    canvas.drawRect(x, top, x + runWidth, top + lineHeight, fillPaint)
-                }
                 canvas.drawText(layout.chars, charStart, charEnd - charStart, x, baseline, textPaint)
                 if ((paletteFlags(styleId) and ThemeSnapshot.FLAG_UNDERLINE) != 0) {
                     fillPaint.color = textPaint.color
@@ -743,6 +746,25 @@ public class CopeEditorView(context: Context) : View(context) {
                 }
             }
         }
+    }
+
+    private fun drawSpanBackgrounds(canvas: Canvas, viewport: Viewport, index: Int, textLeft: Float, top: Float) {
+        val from = viewport.lineSpanOffset[index]
+        val end = from + viewport.lineSpanCount[index]
+        for (span in from until end) {
+            val style = viewport.spanStyle[span]
+            if (!TokenBackground.shouldPaint(paletteFlags(style), paletteBg(style), paletteBg(0), colors.editorBg)) continue
+            val left = max(gutterWidth, textLeft + layout.columnOfByte(viewport.spanBegin[span]) * advance)
+            val right = min(width.toFloat(), textLeft + layout.columnOfByte(viewport.spanEnd[span]) * advance)
+            if (right <= left) continue
+            fillPaint.color = paletteBg(style)
+            canvas.drawRect(left, top, right, top + lineHeight, fillPaint)
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) post { ensureCaretVisible() }
     }
 
     private fun drawTabMarker(canvas: Canvas, textLeft: Float, top: Float, cell: Int) {

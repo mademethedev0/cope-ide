@@ -138,6 +138,8 @@ struct FileInfo {
     std::string_view name;   ///< file name or path; extension parsed out of it
     size_t byteSize = 0;     ///< 0 == unknown
     size_t lineCount = 0;    ///< 0 == unknown
+    /// nullopt selects by filename; empty explicitly disables grammar selection.
+    std::optional<std::string_view> grammarScope = std::nullopt;
 };
 
 /// Flat result of a batch call, shaped for the JNI boundary: one span array plus

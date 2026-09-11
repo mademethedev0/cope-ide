@@ -46,6 +46,24 @@ class AssetIndexTest {
     )
 
     @Test
+    fun `whole filenames never hijack generic text files`() {
+        val index = realIndex()
+        assertEquals("Plain text", index.languageOf("untitled.txt"))
+        assertEquals("Plain text", index.languageOf("notes.TXT"))
+        assertEquals("source.cmake", index.scopeOf("CMakeLists.txt"))
+        assertEquals("source.cmake", index.scopeOf("folder/CMakeLists.txt"))
+        assertEquals("source.python", index.scopeOf("EXAMPLE.PY"))
+    }
+
+    @Test
+    fun `compound suffix lookup prefers the most specific match`() {
+        val index = AssetIndex.parse("source.special\ts.json\td.ts\nsource.ts\tt.json\tts\n", "", "")
+        assertEquals("source.special", index.scopeOf("types.d.ts"))
+        assertEquals("source.ts", index.scopeOf("app.ts"))
+        assertNull(index.scopeOf("unknown"))
+    }
+
+    @Test
     fun `the real indexes parse`() {
         val index = realIndex()
         assertTrue("no themes parsed", index.themes.size > 40)

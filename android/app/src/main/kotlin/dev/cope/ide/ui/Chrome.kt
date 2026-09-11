@@ -30,6 +30,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,6 +60,7 @@ import dev.cope.ide.theme.LocalCopeColors
 @Composable
 public fun NoticeStrip(notice: Notice, onDismiss: () -> Unit) {
     val colors = LocalCopeColors.current
+    var expanded by remember(notice.text) { mutableStateOf(false) }
     val accent = when (notice.severity) {
         Notice.Severity.ERROR -> colors.error
         Notice.Severity.WARN -> colors.warning
@@ -78,16 +84,18 @@ public fun NoticeStrip(notice: Notice, onDismiss: () -> Unit) {
             text = notice.text,
             color = colors.surfaceFg,
             sizeSp = CopeDimens.TEXT_SMALL_SP,
-            maxLines = 3,
-            modifier = Modifier.weight(1f).padding(vertical = 7.dp),
+            maxLines = if (expanded) Int.MAX_VALUE else 3,
+            modifier = Modifier.weight(1f).clickable { expanded = !expanded }
+                .semanticsLabel("${notice.text}. Tap to expand or collapse")
+                .padding(vertical = 7.dp),
         )
         val action = notice.action
         val actionLabel = notice.actionLabel
         if (actionLabel != null && action != null) {
-            PillButton(actionLabel, action)
+            PillButton(actionLabel, action, modifier = Modifier.widthIn(max = 112.dp))
             HSpace(6)
         }
-        IconButton(Icon.CLOSE, "Dismiss", onDismiss, tint = colors.dim, sizeDp = 12, touchDp = 40)
+        IconButton(Icon.CLOSE, "Dismiss", onDismiss, tint = colors.dim, sizeDp = 12, touchDp = 44)
     }
 }
 
@@ -133,9 +141,10 @@ public fun InfoBar(state: AppState) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (tab == null) {
-                Label("No file open", colors.dim, sizeSp = CopeDimens.TEXT_SMALL_SP)
+                Label("No file open", colors.dim, sizeSp = CopeDimens.TEXT_SMALL_SP,
+                    modifier = Modifier.weight(1f))
             } else {
-                if (tab.directory.isNotEmpty()) {
+                if (tab.directory.isNotEmpty() && LocalConfiguration.current.screenWidthDp >= 480) {
                     Label(
                         text = shortenPath(tab.directory),
                         color = colors.dim,
@@ -146,11 +155,12 @@ public fun InfoBar(state: AppState) {
                     text = tab.title,
                     color = colors.surfaceFg,
                     sizeSp = CopeDimens.TEXT_SP,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
             }
-            HSpace(2)
-            CopeIconGlyph(Icon.SEARCH, colors.dim, sizeDp = 11)
+            HSpace(8)
+            CopeIconGlyph(Icon.SEARCH, colors.dim, sizeDp = 13)
+            HSpace(8)
         }
 
         if (tab != null) {
@@ -394,6 +404,13 @@ public fun TabStrip(
                 .background(Color(colors.tabsBg)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(
+                icon = Icon.FOLDER,
+                description = "Browse files",
+                onClick = { state.openFiles() },
+                tint = colors.tabActiveFg,
+                touchDp = 44,
+            )
             if (state.tabs.isEmpty()) {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Label("No open files", colors.dim, sizeSp = CopeDimens.TEXT_SMALL_SP)
@@ -417,7 +434,7 @@ public fun TabStrip(
                 return@Row
             }
 
-            val visible = ((widthDp - 46) / 96).coerceIn(1, 5)
+            val visible = ((widthDp - 90) / 96).coerceIn(1, 5)
             val fits = state.tabs.size <= visible
             // The active tab is always in the window, and the window is as far left
             // as it can be while containing it: switching tabs must not make the
@@ -485,7 +502,7 @@ private fun TabChip(state: AppState, tab: Tab, index: Int, modifier: Modifier) {
             color = if (selected) colors.tabActiveFg else colors.tabInactiveFg,
             sizeSp = CopeDimens.TEXT_SMALL_SP,
             bold = selected,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f),
         )
         if (selected) {
             IconButton(

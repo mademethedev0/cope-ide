@@ -28,6 +28,30 @@ class DeriveTest {
         return ThemeSnapshot("test", isDark, palette, ui)
     }
 
+    @Test
+    fun `active controls stay readable on mixed light and dark surfaces`() {
+        for (dark in listOf(true, false)) {
+            for (bg in listOf(0xFF101010.toInt(), 0xFF777777.toInt(), 0xFFF5F5F5.toInt())) {
+                val colors = Derive.from(snapshot(dark,
+                    UiKeys.EDITOR_BG to bg, UiKeys.SIDEBAR_BG to bg,
+                    UiKeys.MENU_BG to bg, UiKeys.MENU_FG to bg,
+                    UiKeys.INPUT_BG to bg, UiKeys.INPUT_FG to bg))
+                assertTrue(Derive.contrast(colors.menuFg, colors.menuBg) >= 4.5f)
+                assertTrue(Derive.contrast(colors.inputFg, colors.inputBg) >= 4.5f)
+                assertTrue(Derive.contrast(colors.keyFg, colors.keyBg) >= 4.5f)
+            }
+        }
+    }
+
+    @Test
+    fun `button text chooses the higher contrast endpoint`() {
+        for (channel in 0..255) {
+            val bg = 0xFF000000.toInt() or (channel shl 16) or (channel shl 8) or channel
+            assertTrue(Derive.contrast(Derive.bestTextOn(bg), bg) >= 4.5f)
+            assertTrue(Derive.contrast(Derive.textOn(bg, bg), bg) >= 4.5f)
+        }
+    }
+
     // --- colour maths -------------------------------------------------------
 
     @Test

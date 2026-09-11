@@ -91,7 +91,7 @@ private fun AnchoredMenu(
             Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = 4.dp, end = 4.dp)
-                .width(268.dp)
+                .fillMaxWidth(0.96f)
                 .heightIn(max = 460.dp)
                 .background(Color(colors.menuBg))
                 .border(1.dp, Color(colors.border))
@@ -928,7 +928,7 @@ private fun CloseConfirm(state: AppState, tabIndex: Int, onDismiss: () -> Unit) 
             PillButton("Discard", { state.closeTab(tabIndex) })
             PillButton(
                 text = "Save",
-                onClick = { if (state.save(tab)) state.closeTab(tabIndex) },
+                onClick = { state.saveAndClose(tabIndex) },
                 emphasised = true,
             )
         }
@@ -1151,6 +1151,7 @@ public fun FindBar(state: AppState) {
                     placeholder = "replace with",
                     modifier = Modifier.weight(1f),
                 )
+                PillButton("Replace", { state.replaceOne() })
                 PillButton(
                     text = "All",
                     onClick = { state.replaceAll() },

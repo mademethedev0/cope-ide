@@ -148,8 +148,10 @@ public class AppState(private val context: Context) {
     public var onPickDocument: (() -> Unit)? = null
     public var onCreateDocument: ((String) -> Unit)? = null
 
-    /** Tab waiting for a "save as" destination, or -1. */
-    private var saveAsTab: Int = -1
+    /** Stable tab identity while the external destination picker is open. */
+    private var saveAsTab: Tab? = null
+    private var closeAfterSave: Tab? = null
+    public var onRequestStoragePermission: (() -> Unit)? = null
 
     // File tree
     public var treeRoot: String by mutableStateOf(Storage.defaultRoot())
@@ -328,7 +330,8 @@ public class AppState(private val context: Context) {
             return
         }
         if (stat.isDirectory) {
-            treePath = path
+            navigateTreeTo(path)
+            openFiles()
             return
         }
         val document = engine.openPath(path)
@@ -411,15 +414,15 @@ public class AppState(private val context: Context) {
             )
             return
         }
-        saveAsTab = tabIndex
+        saveAsTab = tab
         overlay = null
         create(tab.title)
     }
 
     /** Result of [requestSaveAs]: writes the bytes and retargets the tab. */
     public fun completeSaveAs(uri: Uri) {
-        val tab = tabs.getOrNull(saveAsTab) ?: activeTab ?: return
-        saveAsTab = -1
+        val tab = saveAsTab?.takeIf { it in tabs } ?: return
+        saveAsTab = null
         // A real path is worth taking: it turns the tab back into an mmapped file
         // instead of one that round-trips through the ContentResolver on every save.
         val real = Storage.realPathOf(uri)
@@ -428,11 +431,15 @@ public class AppState(private val context: Context) {
             tab.title = real.substringAfterLast('/')
             tab.directory = real.substringBeforeLast('/', "") + "/"
             prefs.noteRecent(real)
+            tab.document.setHighlightName(tab.title)
+            editor?.invalidateContent()
+            finishPendingClose(tab)
             notice = null
             bump()
             return
         }
         if (!Storage.writeAll(context, uri, tab.document.bytes())) {
+            closeAfterSave = null
             notice = Notice(
                 "Could not write to the location you chose.",
                 severity = Notice.Severity.ERROR,
@@ -444,8 +451,34 @@ public class AppState(private val context: Context) {
         tab.title = Storage.displayName(context, uri)
         tab.directory = ""
         tab.document.markSaved()
+        tab.document.setHighlightName(tab.title)
+        editor?.invalidateContent()
+        finishPendingClose(tab)
         notice = null
         bump()
+    }
+
+    public fun cancelSaveAs() {
+        saveAsTab = null
+        closeAfterSave = null
+    }
+
+    public fun saveAndClose(index: Int) {
+        val tab = tabs.getOrNull(index) ?: return
+        if (tab.uri == null && tab.document.path == null) {
+            closeAfterSave = tab
+            requestSaveAs(index)
+        } else if (save(tab)) {
+            closeTab(index)
+        }
+    }
+
+    private fun finishPendingClose(tab: Tab) {
+        if (closeAfterSave === tab) {
+            closeAfterSave = null
+            val index = tabs.indexOf(tab)
+            if (index >= 0) closeTab(index)
+        }
     }
 
     private fun addTab(tab: Tab) {
@@ -529,6 +562,8 @@ public class AppState(private val context: Context) {
 
     public fun closeTab(indexToClose: Int) {
         val tab = tabs.getOrNull(indexToClose) ?: return
+        if (saveAsTab === tab) saveAsTab = null
+        if (closeAfterSave === tab) closeAfterSave = null
         // Save the live editor state into whatever tab currently owns it *before*
         // the indices shift, then forget the active index so switchTab cannot write
         // state into the wrong tab.
@@ -576,12 +611,7 @@ public class AppState(private val context: Context) {
         }
         val path = target.document.path
         if (path == null) {
-            notice = Notice(
-                "${target.title} has never been saved, so there is nowhere to write it yet.",
-                actionLabel = "Choose a location",
-                severity = Notice.Severity.WARN,
-                action = { requestSaveAs(tabs.indexOf(target)) },
-            )
+            requestSaveAs(tabs.indexOf(target))
             return false
         }
         val ok = target.document.save(path)
@@ -606,6 +636,7 @@ public class AppState(private val context: Context) {
     public fun requestAllFilesAccess() {
         val intent = Storage.allFilesAccessIntent(context)
         if (intent == null) {
+            onRequestStoragePermission?.let { it(); return }
             notice = Notice(
                 "This Android version grants storage access from the system permission prompt, " +
                     "not from settings.",
@@ -647,6 +678,8 @@ public class AppState(private val context: Context) {
                 tab.document.path = moved
                 tab.title = moved.substringAfterLast('/')
                 tab.directory = moved.substringBeforeLast('/', "") + "/"
+                tab.document.setHighlightName(tab.title)
+                editor?.invalidateContent()
             }
         }
         if (treePath == path) navigateTreeTo(moved)
@@ -663,6 +696,8 @@ public class AppState(private val context: Context) {
         if (path == null) {
             // An unsaved buffer has no file to rename, so this is just a retitle.
             tab.title = newName
+            tab.document.setHighlightName(newName)
+            editor?.invalidateContent()
             overlay = null
             bump()
             return
@@ -872,7 +907,16 @@ public class AppState(private val context: Context) {
 
     // --- panels -------------------------------------------------------------
 
+    public fun openFiles() {
+        editor?.hideKeyboard()
+        sheetTab = SheetTab.FILES
+        sheetSnap = SheetSnap.HALF
+        overlay = null
+        refreshStorageMode()
+    }
+
     public fun openInspector() {
+        editor?.hideKeyboard()
         sheetTab = SheetTab.INSPECTOR
         if (sheetSnap == SheetSnap.CLOSED) sheetSnap = SheetSnap.HALF
         overlay = null
@@ -948,11 +992,27 @@ public class AppState(private val context: Context) {
         }
     }
 
+    public fun replaceOne() {
+        val view = editor ?: return
+        val document = activeTab?.document ?: return
+        if (findQuery.isEmpty()) return
+        val hit = document.find(findQuery, view.selectionStart, searchFlags(), false)
+        if (hit == null || hit[0] != view.selectionStart || hit[1] != view.selectionEnd - view.selectionStart) {
+            findNext()
+            return
+        }
+        if (replaceQuery.isEmpty()) view.deleteSelection() else view.insertText(replaceQuery)
+        countMatches()
+        onEditorChanged()
+        findNext()
+    }
+
     public fun replaceAll() {
         val document = activeTab?.document ?: return
         if (findQuery.isEmpty()) return
         val count = document.replaceAll(findQuery, replaceQuery, searchFlags())
-        editor?.invalidateContent()
+        editor?.let { it.setCaret(it.caret.coerceIn(0L, document.byteSize), extend = false); it.invalidateContent() }
+        syncCaret()
         notice = when {
             count < 0 -> Notice(
                 "Refused: replacing every match would rewrite more than 8 MB in one edit, " +

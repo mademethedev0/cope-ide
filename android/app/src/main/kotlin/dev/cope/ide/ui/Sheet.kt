@@ -12,7 +12,7 @@
 // running, how much of the file the grammar scoped, how many patterns the regex
 // engine refused, and the scope stack under the caret — is far more useful on a
 // phone anyway.
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package dev.cope.ide.ui
 
@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import java.io.File
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -123,18 +125,17 @@ private fun FilesPanel(state: AppState) {
     if (state.storageMode != StorageMode.ALL_FILES) {
         // Honest empty state: the real reason, and both real actions.
         Column(
-            Modifier.fillMaxWidth().padding(14.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Label(
-                "Cope cannot browse folders without all-files access. Android only lets an app " +
-                    "list directories with that permission; without it, files can still be opened " +
-                    "one at a time through the system picker.",
+                "The built-in browser needs storage access. You can still open individual " +
+                    "files with Android’s system picker without granting it.",
                 colors.surfaceFg,
                 sizeSp = CopeDimens.TEXT_SMALL_SP,
                 maxLines = 6,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PillButton("Grant access", { state.requestAllFilesAccess() }, emphasised = true)
                 PillButton("Open one file", { state.requestOpenDocument() })
                 PillButton("Recheck", { state.refreshStorageMode() })
@@ -154,7 +155,10 @@ private fun FilesPanel(state: AppState) {
         return
     }
 
-    val nodes = remember(state.treePath, state.treeExpanded.size, state.revision) {
+    val readable = remember(state.treePath, state.revision) {
+        File(state.treePath).let { it.isDirectory && it.canRead() }
+    }
+    val nodes = remember(state.treePath, state.treeExpanded.toList(), state.revision) {
         buildTree(state)
     }
     Column(Modifier.fillMaxSize()) {
@@ -162,9 +166,12 @@ private fun FilesPanel(state: AppState) {
         HDivider(colors.border)
         if (nodes.isEmpty()) {
             EmptyState(
-                text = "This folder is empty.",
-                actionLabel = "New file here",
-                onAction = { state.overlay = Overlay.NewEntry(state.treePath, false) },
+                text = if (readable) "This folder is empty." else "Cannot read this folder. Android may restrict access to this location.",
+                actionLabel = if (readable) "New file here" else "Open system picker",
+                onAction = {
+                    if (readable) state.overlay = Overlay.NewEntry(state.treePath, false)
+                    else state.requestOpenDocument()
+                },
             )
             return@Column
         }
@@ -181,7 +188,7 @@ private fun FilesPanel(state: AppState) {
             HSpace(8)
             Label(
                 text = "${nodes.count { !it.isDirectory }} files, " +
-                    "${nodes.count { it.isDirectory }} folders",
+                    "${nodes.count { it.isDirectory }} folders" + if (nodes.size >= 3000) " (first 3000 entries)" else "",
                 color = colors.dim,
                 sizeSp = CopeDimens.TEXT_TINY_SP,
                 modifier = Modifier.weight(1f),
@@ -238,6 +245,18 @@ private fun Breadcrumb(state: AppState) {
             sizeDp = 13,
             touchDp = 34,
         )
+        IconButton(
+            icon = Icon.FOLDER,
+            description = "Shared storage",
+            onClick = { state.navigateTreeTo(Storage.defaultRoot()) },
+            touchDp = 34,
+        )
+        IconButton(
+            icon = Icon.LIST,
+            description = "Refresh folder",
+            onClick = { state.bump() },
+            touchDp = 34,
+        )
         Row(
             Modifier
                 .weight(1f)
@@ -274,7 +293,10 @@ private fun TreeRow(state: AppState, node: TreeNode) {
     DenseRow(
         selected = isActive,
         onClick = {
-            if (node.isDirectory) state.toggleExpanded(node.path) else state.openPath(node.path)
+            if (node.isDirectory) state.navigateTreeTo(node.path) else {
+                state.openPath(node.path)
+                state.sheetSnap = SheetSnap.CLOSED
+            }
         },
         onLongClick = { state.overlay = Overlay.TreeMenu(node.path, node.isDirectory) },
     ) {
@@ -328,8 +350,9 @@ private fun buildTree(state: AppState): List<TreeNode> {
     fun walk(path: String, depth: Int) {
         // Depth is bounded so a symlink loop or a pathological tree cannot hang the
         // UI thread; 12 levels is deeper than any real project on a phone.
-        if (depth > 12) return
+        if (depth > 12 || out.size >= 3000) return
         for (entry in engine.listDir(path)) {
+            if (out.size >= 3000) break
             val child = if (path.endsWith('/')) "$path${entry.name}" else "$path/${entry.name}"
             out += TreeNode(child, entry.name, entry.isDirectory, depth, entry.size)
             if (entry.isDirectory && state.treeExpanded.contains(child)) {
@@ -468,8 +491,8 @@ private fun verdictOf(
 private fun Fact(label: String, value: String, valueColor: Int) {
     val colors = LocalCopeColors.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Label(label, colors.dim, sizeSp = CopeDimens.TEXT_TINY_SP, modifier = Modifier.weight(1f))
-        Label(value, valueColor, sizeSp = CopeDimens.TEXT_SMALL_SP)
+        Label(label, colors.dim, sizeSp = CopeDimens.TEXT_TINY_SP, modifier = Modifier.weight(1f), maxLines = 3)
+        Label(value, valueColor, modifier = Modifier.weight(1f), sizeSp = CopeDimens.TEXT_SMALL_SP, maxLines = 3)
     }
 }
 

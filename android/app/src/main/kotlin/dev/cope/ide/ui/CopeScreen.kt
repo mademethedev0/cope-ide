@@ -28,7 +28,7 @@
 //
 // Keyboard visibility is likewise two signals OR'd together (see imeVisible):
 // the ime inset on the new path, a visible-frame measurement on the old one.
-@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package dev.cope.ide.ui
 
@@ -52,6 +52,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeContent
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -119,7 +123,7 @@ public fun CopeScreen(state: AppState) {
     BackHandler(enabled = state.canDismiss()) { state.dismissTopmost() }
 
     Box(Modifier.fillMaxSize().background(Color(colors.editorBg))) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent)) {
             val notice = state.notice
             if (notice != null) {
                 NoticeStrip(notice) { state.notice = null }
@@ -153,7 +157,8 @@ public fun CopeScreen(state: AppState) {
                     animationSpec = spring(dampingRatio = 0.85f, stiffness = 900f),
                     label = "sheet",
                 )
-                val sheetHeight = if (dragging) dragHeight else animated
+                val sheetHeight = (if (imeUp) 0f else if (dragging) dragHeight else animated)
+                    .coerceIn(0f, snapFull)
 
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxWidth().weight(1f, fill = true)) {
@@ -204,7 +209,9 @@ public fun CopeScreen(state: AppState) {
                 KeyRow(state, keyPage) { keyPage = it }
             }
         }
-        Overlays(state)
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeContent)) {
+            Overlays(state)
+        }
     }
 }
 
@@ -258,6 +265,7 @@ private fun EditorArea(state: AppState) {
 
 @Composable
 private fun EditorHost(state: AppState, modifier: Modifier) {
+    val appliedPalette = remember { arrayOf<IntArray?>(null) }
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -301,7 +309,11 @@ private fun EditorHost(state: AppState, modifier: Modifier) {
                 if (tab != null) view.restoreState(tab.editorState)
             }
             if (view.colors !== state.colors) view.colors = state.colors
-            if (view.palette !== state.palette) view.palette = state.palette
+            if (appliedPalette[0] !== state.palette) {
+                appliedPalette[0] = state.palette
+                view.palette = state.palette
+                view.invalidateContent()
+            }
         },
         onRelease = { view ->
             if (state.editor === view) state.editor = null
@@ -363,7 +375,7 @@ private fun openLink(state: AppState, href: String) {
 private fun NoFileOpen(state: AppState) {
     val colors = LocalCopeColors.current
     Column(
-        Modifier.fillMaxSize().padding(20.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
         Label("No file open", colors.editorFg, sizeSp = 15, bold = true)
@@ -379,8 +391,9 @@ private fun NoFileOpen(state: AppState) {
             sizeSp = CopeDimens.TEXT_SMALL_SP,
             maxLines = 6,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PillButton("Open…", { state.requestOpenDocument() }, emphasised = true)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PillButton("Files", { state.openFiles() }, emphasised = true)
+            PillButton("Open…", { state.requestOpenDocument() })
             PillButton("New file", { state.newBuffer() })
             if (state.storageMode != StorageMode.ALL_FILES) {
                 PillButton("Grant access", { state.requestAllFilesAccess() })

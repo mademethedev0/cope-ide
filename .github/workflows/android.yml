@@ -22,7 +22,7 @@ concurrency:
 env:
   # JetBrains Mono, pinned. Checked by SHA-256 before anything is extracted.
   JBMONO_VERSION: '2.304'
-  JBMONO_SHA256: '5f0a2a8a4b8e0b2f6b0f1d7f0f8b4a0e4e6a0b1e8c9d2f3a4b5c6d7e8f9a0b1c'
+  JBMONO_SHA256: '6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf'
 
 jobs:
   apk:

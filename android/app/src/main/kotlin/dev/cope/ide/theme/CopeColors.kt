@@ -93,7 +93,7 @@ public object Derive {
     private const val MIN_TEXT_CONTRAST = 2.6f
 
     /** Floor for primary text (editor foreground on editor background). */
-    private const val MIN_PRIMARY_CONTRAST = 3.4f
+    private const val MIN_PRIMARY_CONTRAST = 4.5f
 
     public fun from(snapshot: ThemeSnapshot?): CopeColors {
         val isDark = snapshot?.isDark ?: true
@@ -182,7 +182,7 @@ public object Derive {
         }
         val surfaceFg = readable(
             opaque(firstNonZero(raw(UiKeys.SIDEBAR_FG), editorFg), editorFg),
-            surface, MIN_TEXT_CONTRAST, away,
+            surface, MIN_PRIMARY_CONTRAST, away,
         )
         val surfaceHeaderBg = flattenOr(raw(UiKeys.SIDEBAR_HEADER_BG), surface) {
             mix(surface, away, if (isDark) 0.05f else 0.04f)
@@ -289,7 +289,7 @@ public object Derive {
             scrollbar = scrollbar,
             dim = readable(mix(surface, surfaceFg, 0.55f), surface, 2.0f, away),
             keyBg = mix(surface, toward, if (isDark) 0.18f else 0.04f),
-            keyFg = surfaceFg,
+            keyFg = readable(surfaceFg, mix(surface, toward, if (isDark) 0.18f else 0.04f), 4.5f, away),
             surfaceWasSynthesized = synthesized,
         )
     }
@@ -358,15 +358,25 @@ public object Derive {
      */
     private fun readable(fg: Int, surface: Int, minRatio: Float, away: Int): Int {
         if (contrast(fg, surface) >= minRatio) return fg
-        var result = fg
-        var t = 0.12f
-        repeat(8) {
-            result = mix(fg, away, t)
+        // A dark theme can contain a light menu. Choose against the actual
+        // surface, not the theme's global dark/light flag.
+        val opposite = if (contrast(away, surface) >= minRatio) away else bestTextOn(surface)
+        for (step in 1..20) {
+            val result = mix(fg, opposite, step / 20f)
             if (contrast(result, surface) >= minRatio) return result
-            t += 0.12f
         }
-        return result
+        return opposite
     }
+
+    public fun bestTextOn(background: Int): Int =
+        if (contrast(0xFF000000.toInt(), background) >= contrast(0xFFFFFFFF.toInt(), background)) {
+            0xFF000000.toInt()
+        } else {
+            0xFFFFFFFF.toInt()
+        }
+
+    public fun textOn(foreground: Int, background: Int): Int =
+        readable(flatten(foreground, background), background, 4.5f, bestTextOn(background))
 
     /** Nudges `base` toward `hint` just enough to read as that hue. */
     private fun mixTowardHue(base: Int, hint: Int): Int = mix(base, hint, 0.75f)

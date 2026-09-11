@@ -105,11 +105,13 @@ Highlighter::Highlighter(syntax::GrammarRegistry& registry, syntax::IRegexEngine
 
     const syntax::Grammar* grammar = nullptr;
     const std::string_view extension = extensionOfFileName(file.name);
-    if (!extension.empty()) {
+    if (file.grammarScope.has_value()) {
+        if (!file.grammarScope->empty()) grammar = registry.grammarForScope(*file.grammarScope);
+    } else if (!extension.empty()) {
         grammar = registry.grammarForExtension(extension);
         if (grammar == nullptr) grammar = registry.grammarForExtension(toLowerAscii(extension));
     }
-    if (grammar == nullptr) {
+    if (grammar == nullptr && !file.grammarScope.has_value()) {
         // Grammars register extensionless names ("Makefile", "Dockerfile") as
         // file types too, so the whole base name is worth one lookup.
         const std::string_view base = baseName(file.name);
