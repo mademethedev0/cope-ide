@@ -905,7 +905,7 @@ TEST(MarkdownFuzz, GeneratedRoundTripStability) {
 
 TEST(MarkdownSerialize, NestedDelimiterDoesNotCloseOuterEmphasis) {
     for (const std::string_view source : {"_a *b* c_", "_a \\*b_", "_a* b_",
-                                          "__a *b* c__", "_a **b** c_"}) {
+                                          "__a *b* c__", "_a **b** c_", "1*=_y_*"}) {
         SCOPED_TRACE(source);
         const Doc doc = ide::render::parse(source);
         const std::string once = ide::render::serialize(doc);

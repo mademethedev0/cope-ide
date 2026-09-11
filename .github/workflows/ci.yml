@@ -68,9 +68,34 @@ jobs:
         working-directory: build
         run: ctest --output-on-failure
 
+      # Reference dependencies exist only on the runner, never in the APK.
+      - name: Set up Node for TextMate reference
+        if: matrix.pcre2 == 'ON' && !cancelled()
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned reference tools (CI only)
+        if: matrix.pcre2 == 'ON' && !cancelled()
+        working-directory: tools/highlight_reference
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+
+      - name: Measure TextMate reference compatibility
+        if: matrix.pcre2 == 'ON' && !cancelled()
+        timeout-minutes: 5
+        run: node tools/highlight_reference/compare.cjs build/cli/cope_cli . build/highlight-reference.json
+
+      - name: Upload TextMate comparison
+        if: matrix.pcre2 == 'ON' && !cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: highlight-reference
+          path: build/highlight-reference.json
+          if-no-files-found: warn
+
       # Phase 5 slice 3: differential gate. The same inputs run through
-      # std::regex and PCRE2; token differences are reported information,
-      # a pattern refused by BOTH engines fails the step.
+      # std::regex and PCRE2; token differences are reported information.
+      # Only PCRE2-only pattern refusals fail this gate.
       - name: Differential regex test (std::regex vs PCRE2)
         if: matrix.pcre2 == 'ON'
         working-directory: build

@@ -1005,9 +1005,10 @@ char emphasisChar(std::string_view body, char prevByte, char nextByte) {
     return underscoreOk ? '_' : '*';
 }
 
-void serializeInlines(std::string& out, const std::vector<Inline>& children);
+void serializeInlines(std::string& out, const std::vector<Inline>& children,
+                      char avoidDelimiter = '\0');
 
-void serializeInline(std::string& out, const Inline& node, char nextByte) {
+void serializeInline(std::string& out, const Inline& node, char nextByte, char avoidDelimiter) {
     auto text = [&](const std::string& s) { appendEscaped(out, s); };
     // The byte the node lands next to: '_' emphasis is illegal against an
     // alphanumeric, and a '*' next to a '*' would form a longer run.
@@ -1046,15 +1047,25 @@ void serializeInline(std::string& out, const Inline& node, char nextByte) {
                 out += "$$";
             } else if constexpr (std::is_same_v<T, Emph>) {
                 std::string body;
-                serializeInlines(body, v.children);
-                const char d = emphasisChar(body, prevByte, nextByte);
+                if (avoidDelimiter == '\0') serializeInlines(body, v.children);
+                char d = emphasisChar(body, prevByte, nextByte);
+                if (avoidDelimiter == '*' && !isAsciiAlnum(prevByte) &&
+                    !isAsciiAlnum(nextByte) && prevByte != '_' && nextByte != '_') d = '_';
+                if (avoidDelimiter == '_') d = '*';
+                body.clear();
+                serializeInlines(body, v.children, d);
                 out += d;
                 out += body;
                 out += d;
             } else if constexpr (std::is_same_v<T, Strong>) {
                 std::string body;
-                serializeInlines(body, v.children);
-                const char d = emphasisChar(body, prevByte, nextByte);
+                if (avoidDelimiter == '\0') serializeInlines(body, v.children);
+                char d = emphasisChar(body, prevByte, nextByte);
+                if (avoidDelimiter == '*' && !isAsciiAlnum(prevByte) &&
+                    !isAsciiAlnum(nextByte) && prevByte != '_' && nextByte != '_') d = '_';
+                if (avoidDelimiter == '_') d = '*';
+                body.clear();
+                serializeInlines(body, v.children, d);
                 out.append(2, d);
                 out += body;
                 out.append(2, d);
@@ -1107,7 +1118,7 @@ void serializeInline(std::string& out, const Inline& node, char nextByte) {
         node.node);
 }
 
-void serializeInlines(std::string& out, const std::vector<Inline>& children) {
+void serializeInlines(std::string& out, const std::vector<Inline>& children, char avoidDelimiter) {
     for (size_t i = 0; i < children.size(); ++i) {
         char nextByte = '\0';
         for (size_t j = i + 1; j < children.size(); ++j) {
@@ -1117,7 +1128,7 @@ void serializeInlines(std::string& out, const std::vector<Inline>& children) {
             }
             break;
         }
-        serializeInline(out, children[i], nextByte);
+        serializeInline(out, children[i], nextByte, avoidDelimiter);
     }
 }
 

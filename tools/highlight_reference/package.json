@@ -1,0 +1,10 @@
+{
+  "name": "cope-highlight-reference",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CI-only TextMate reference; never shipped with the app",
+  "dependencies": {
+    "vscode-textmate": "9.3.2",
+    "vscode-oniguruma": "2.0.1"
+  }
+}

@@ -139,6 +139,7 @@ void printHelp(std::FILE* out) {
       "highlighting:\n"
       "  hl <file>               print the file with 24-bit ANSI highlighting\n"
       "  scopes <file>           print line:range + scope stack for every token\n"
+      "  syntax <file> --scope X raw grammar scopes for reference tooling (no repair)\n"
       "  quality <file|--all>    print the highlight quality metric\n"
       "  difftest <file|--all>   diff std::regex vs PCRE2 token streams (PCRE2 build)\n"
       "\n"
@@ -712,6 +713,68 @@ int commandHl(int argc, char** argv) {
   return 0;
 }
 
+// Machine-readable raw TextMate path: exact scope selection, no theme, no
+// fallback repair and no probe. Output offsets exclude the synthetic newline,
+// but the tokenizer receives one on every line, like vscode-textmate.
+int commandSyntax(int argc, char** argv) {
+  std::string path;
+  std::string scope;
+  std::string engineName;
+  for (int i = 2; i < argc; ++i) {
+    const std::string_view arg = argv[i];
+    if (arg == "--scope" && i + 1 < argc) {
+      scope = argv[++i];
+    } else if (arg == "--engine" && i + 1 < argc) {
+      engineName = argv[++i];
+    } else if (!arg.empty() && arg[0] != '-' && path.empty()) {
+      path = std::string(arg);
+    } else {
+      return usage();
+    }
+  }
+  if (path.empty() || scope.empty()) return usage();
+  EngineContext context(engineName);
+  if (!engineAvailable(context, engineName)) return 1;
+  loadAllGrammars(context.host, context.registry);
+  const auto* grammar = context.registry.grammarForScope(scope);
+  if (grammar == nullptr) {
+    cliError("no grammar for exact scope '" + scope + "'");
+    return 1;
+  }
+  std::vector<std::string> lines;
+  size_t byteSize = 0;
+  if (!loadLines(context.host, path, lines, byteSize)) {
+    cliError("cannot read " + path);
+    return 1;
+  }
+  ide::syntax::Tokenizer tokenizer(context.registry, *context.regexEngine, grammar->id());
+  auto state = tokenizer.initialState();
+  for (size_t i = 0; i < lines.size(); ++i) {
+    const size_t length = lines[i].size();
+    lines[i] += '\n';
+    const auto result = tokenizer.tokenizeLine(lines[i], state);
+    state = result.endState;
+    if (result.bailedOnLineLength || result.hitIterationLimit || result.hitDepthLimit ||
+        result.forcedAdvances != 0u) {
+      cliError("syntax safety limit at line " + std::to_string(i));
+      return 1;
+    }
+    for (const auto& token : result.tokens) {
+      const size_t end = std::min(token.end, length);
+      if (token.begin >= end) continue;
+      const std::string scopes = tokenizer.scopeTable().flatten(token.scopes);
+      std::printf("%zu:%zu-%zu ", i, token.begin, end);
+      std::fwrite(scopes.data(), 1, scopes.size(), stdout);
+      std::putchar('\n');
+    }
+  }
+  if (context.regexEngine->stats().searchErrors != 0u) {
+    cliError("regex search errors during reference export");
+    return 1;
+  }
+  return 0;
+}
+
 int commandScopes(int argc, char** argv) {
   std::string path;
   std::string tierName;
@@ -1164,6 +1227,9 @@ int main(int argc, char** argv) {
   }
   if (command == "scopes") {
     return commandScopes(argc, argv);
+  }
+  if (command == "syntax") {
+    return commandSyntax(argc, argv);
   }
   if (command == "quality") {
     return commandQuality(argc, argv);
