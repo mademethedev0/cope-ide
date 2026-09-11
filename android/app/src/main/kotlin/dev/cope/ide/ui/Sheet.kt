@@ -231,7 +231,7 @@ private fun Breadcrumb(state: AppState) {
             description = "Up one folder",
             onClick = {
                 val parent = state.treePath.trimEnd('/').substringBeforeLast('/', "")
-                state.setTreePath(if (parent.isEmpty()) "/" else parent)
+                state.navigateTreeTo(if (parent.isEmpty()) "/" else parent)
             },
             enabled = state.treePath.trim('/').isNotEmpty(),
             tint = colors.surfaceFg,
@@ -249,7 +249,7 @@ private fun Breadcrumb(state: AppState) {
                 "/",
                 colors.dim,
                 sizeSp = CopeDimens.TEXT_TINY_SP,
-                modifier = Modifier.clickable { state.setTreePath("/") }.padding(horizontal = 3.dp),
+                modifier = Modifier.clickable { state.navigateTreeTo("/") }.padding(horizontal = 3.dp),
             )
             for ((name, path) in segments) {
                 Label(
@@ -257,7 +257,7 @@ private fun Breadcrumb(state: AppState) {
                     colors.surfaceFg,
                     sizeSp = CopeDimens.TEXT_TINY_SP,
                     modifier = Modifier
-                        .clickable { state.setTreePath(path) }
+                        .clickable { state.navigateTreeTo(path) }
                         .padding(horizontal = 3.dp),
                 )
                 Label("/", colors.dim, sizeSp = CopeDimens.TEXT_TINY_SP)

@@ -649,7 +649,7 @@ public class AppState(private val context: Context) {
                 tab.directory = moved.substringBeforeLast('/', "") + "/"
             }
         }
-        if (treePath == path) setTreePath(moved)
+        if (treePath == path) navigateTreeTo(moved)
         treeExpanded.remove(path)
         overlay = null
         notice = null
@@ -762,7 +762,7 @@ public class AppState(private val context: Context) {
 
     // --- file tree ----------------------------------------------------------
 
-    public fun setTreePath(path: String) {
+    public fun navigateTreeTo(path: String) {
         treePath = if (path.isEmpty()) "/" else path
         prefs.lastFolder = treePath
     }
@@ -888,7 +888,7 @@ public class AppState(private val context: Context) {
     /** Opens the file tree at a path's folder, raising the sheet if it is closed. */
     public fun revealInFiles(path: String) {
         val directory = path.substringBeforeLast('/', "")
-        setTreePath(if (directory.isEmpty()) "/" else directory)
+        navigateTreeTo(if (directory.isEmpty()) "/" else directory)
         sheetTab = SheetTab.FILES
         if (sheetSnap == SheetSnap.CLOSED) sheetSnap = SheetSnap.HALF
         overlay = null

@@ -235,7 +235,7 @@ private fun TreeMenu(
             subtitle = path.substringBeforeLast('/', "/"),
         )
         if (isDirectory) {
-            MenuItem("Open folder", { state.setTreePath(path); onDismiss() }, icon = Icon.FOLDER)
+            MenuItem("Open folder", { state.navigateTreeTo(path); onDismiss() }, icon = Icon.FOLDER)
             MenuItem(
                 text = if (state.treeExpanded.contains(path)) "Collapse" else "Expand",
                 onClick = { state.toggleExpanded(path); onDismiss() },
