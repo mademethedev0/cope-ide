@@ -486,7 +486,7 @@ public:
             if (stats_) ++stats_->searchErrors;
             return std::nullopt;
         }
-        const int rc = jit_
+        int rc = jit_
                            ? pcre2_jit_match(code_,
                                              reinterpret_cast<PCRE2_SPTR>(base),
                                              static_cast<PCRE2_SIZE>(text.size()),
@@ -495,6 +495,13 @@ public:
                                          reinterpret_cast<PCRE2_SPTR>(base),
                                          static_cast<PCRE2_SIZE>(text.size()),
                                          static_cast<PCRE2_SIZE>(startPos), 0u, md, nullptr);
+        if (jit_ && (rc == PCRE2_ERROR_JIT_STACKLIMIT || rc == PCRE2_ERROR_JIT_BADOPTION)) {
+            // JIT stack availability differs across Android ABIs. A runtime
+            // JIT refusal must not silently disable an otherwise valid rule.
+            rc = pcre2_match(code_, reinterpret_cast<PCRE2_SPTR>(base),
+                             static_cast<PCRE2_SIZE>(text.size()),
+                             static_cast<PCRE2_SIZE>(startPos), PCRE2_NO_JIT, md, nullptr);
+        }
         if (rc < 0) {
             // Includes PCRE2_ERROR_NOMATCH and any runtime failure (stack
             // limits, bad JIT state): never throw, report "no match".

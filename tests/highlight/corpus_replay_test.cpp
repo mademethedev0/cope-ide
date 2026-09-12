@@ -234,6 +234,37 @@ protected:
     json::Value cases_;
 };
 
+TEST_P(CorpusReplayTest, AndroidCppViewportHasRealGrammarColoursWithoutRepair) {
+    if (GetParam() != RegexBackend::kPcre2) GTEST_SKIP() << "PCRE2 grammar quality gate";
+    Session session(sources_, GetParam(), "source.cpp", "cpp", false);
+    ASSERT_TRUE(session.ready());
+    auto& highlighter = session.highlighter();
+    const std::vector<std::string> lines = {
+        "// grammar-only comment", "int main() {", "  const char* message = \"hello\";",
+        "  return 42;", "}", "// last line without a disk terminator",
+    };
+    std::vector<std::string> logical;
+    for (const auto& line : lines) logical.push_back(line + "\n");
+    std::vector<std::string_view> views;
+    for (const auto& line : logical) views.emplace_back(line);
+    EXPECT_EQ(highlighter.probe(views), ide::highlight::Tier::kGrammar);
+    auto state = highlighter.initialState();
+    size_t decorated = 0;
+    for (size_t i = 0; i < logical.size(); ++i) {
+        std::vector<StyledSpan> styled;
+        highlighter.highlightLine(logical[i], state, styled);
+        EXPECT_TRUE(tiles(styled, logical[i].size()));
+        bool hasColour = false;
+        for (const auto& span : styled) {
+            if (span.begin >= lines[i].size()) continue;
+            if (span.style != ide::theme::kDefaultStyleId) hasColour = true;
+        }
+        if (hasColour) ++decorated;
+        if (i == 0 || i == lines.size() - 1) EXPECT_TRUE(hasColour) << "comment line " << i;
+    }
+    EXPECT_GE(decorated, 4u);
+}
+
 TEST_P(CorpusReplayTest, RealSourceEditsAndUndoMatchFreshTokenization) {
     for (size_t index = 0; index < cases_.size(); ++index) {
         const auto& item = cases_.at(index);

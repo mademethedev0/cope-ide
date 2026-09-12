@@ -167,8 +167,6 @@ public class AssetIndex(
                 if (knownScopes.contains(scope)) extensions[ext] = scope
             }
 
-            extensions.remove("txt")
-
             val themes = ArrayList<ThemeEntry>()
             for (line in themesTsv.lineSequence()) {
                 if (line.isEmpty()) continue

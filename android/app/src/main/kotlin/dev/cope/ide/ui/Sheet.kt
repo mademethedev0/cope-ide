@@ -453,7 +453,10 @@ private fun InspectorPanel(state: AppState) {
             }
         }
         if (inspection.report.isNotEmpty()) {
-            Label(inspection.report, colors.dim, sizeSp = CopeDimens.TEXT_TINY_SP, maxLines = 6)
+            Label(inspection.report, colors.surfaceFg, sizeSp = CopeDimens.TEXT_TINY_SP, maxLines = Int.MAX_VALUE)
+            PillButton("Copy highlighting report", {
+                state.copyText("highlighting", "${tab.title}\n${inspection.grammarScope}\n${inspection.report}")
+            })
         }
     }
 }

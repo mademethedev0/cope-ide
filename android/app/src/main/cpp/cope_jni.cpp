@@ -232,7 +232,6 @@ public:
             }
         }
         applyCanonicalExtensions();
-        extToScope_.erase("txt");
     }
 
     /// Scope name for a file name, "" when nothing claims it. Extension lookup
@@ -387,6 +386,7 @@ void Session::initHighlighter(size_t byteSize) {
     for (int64_t i = 0; i < probeLines; ++i) {
         std::string text;
         lineText(i, text);
+        text.push_back('\n');
         head.push_back(std::move(text));
     }
     views.reserve(head.size());
@@ -431,6 +431,7 @@ ide::highlight::LineState Session::stateBefore(int64_t line) {
         const int64_t to = from + kCheckpointStride;
         for (int64_t i = from; i < to; ++i) {
             lineText(i, lineScratch_);
+            lineScratch_.push_back('\n');
             highlighter_->scopeLine(lineScratch_, state, scopedScratch_);
         }
         checkpoints_.push_back(state);
@@ -439,6 +440,7 @@ ide::highlight::LineState Session::stateBefore(int64_t line) {
     ide::highlight::LineState state = checkpoints_[want];
     for (int64_t i = static_cast<int64_t>(want) * kCheckpointStride; i < line; ++i) {
         lineText(i, lineScratch_);
+        lineScratch_.push_back('\n');
         highlighter_->scopeLine(lineScratch_, state, scopedScratch_);
     }
     return state;
@@ -471,7 +473,15 @@ const std::vector<char>& Session::viewport(int64_t firstLine, int64_t count) {
     ide::highlight::LineState state = stateBefore(firstLine);
     for (int64_t i = 0; i < count; ++i) {
         const ide::text::LineRange range = lineText(firstLine + i, lineScratch_);
+        const size_t contentLength = lineScratch_.size();
+        // TextMate consumes a logical LF even on the last line. Keep it out
+        // of the display blob, but never strip it before running grammar rules.
+        lineScratch_.push_back('\n');
         highlighter_->highlightLine(lineScratch_, state, spanScratch_);
+        lineScratch_.resize(contentLength);
+        for (auto& span : spanScratch_) span.end = std::min(span.end, contentLength);
+        spanScratch_.erase(std::remove_if(spanScratch_.begin(), spanScratch_.end(),
+            [](const auto& span) { return span.begin >= span.end; }), spanScratch_.end());
 
         lineRecords.push_back(static_cast<int32_t>(range.start));
         lineRecords.push_back(static_cast<int32_t>(text.size()));
@@ -1248,6 +1258,7 @@ JNIEXPORT jstring JNICALL Java_dev_cope_ide_core_CopeNative_inspect(JNIEnv* env,
     for (int64_t i = 0; i < lines; ++i) {
         std::string text;
         session->lineText(i, text);
+        text.push_back('\n');
         owned.push_back(std::move(text));
     }
     const ide::highlight::QualityReport report =
@@ -1271,6 +1282,10 @@ JNIEXPORT jstring JNICALL Java_dev_cope_ide_core_CopeNative_inspect(JNIEnv* env,
     out += std::to_string(static_cast<int>(report.repairRatio() * 1000.0 + 0.5));
     out.push_back('\t');
     out += ide::highlight::formatQualityReport(report);
+    out += " backend=";
+    out += engine->regex().name();
+    out += " search-errors=" + std::to_string(engine->regex().stats().searchErrors);
+    out += " palette=" + std::to_string(engine->theme().paletteSize());
     return toJavaString(env, out);
     COPE_GUARD_END(nullptr)
 }
@@ -1291,6 +1306,7 @@ JNIEXPORT jstring JNICALL Java_dev_cope_ide_core_CopeNative_scopesAt(JNIEnv* env
     std::lock_guard<std::mutex> lock(engine->mutex());
     std::string text;
     session->lineText(line, text);
+    text.push_back('\n');
     ide::highlight::LineState state = session->stateBefore(line);
     std::vector<ide::highlight::ScopedSpan> spans;
     session->highlighter().scopeLine(text, state, spans);
