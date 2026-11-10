@@ -135,6 +135,8 @@ public:
             }
             if (c == '\\') {
                 stepEscape();
+            } else if (c == '[' && tryHandleExtendedClass()) {
+                // The whole class was emitted as a PCRE2 extended class.
             } else if (c == '[') {
                 inClass_ = true;
                 classNegated_ = (i_ + 1 < n && src_[i_ + 1] == '^');
@@ -346,6 +348,177 @@ private:
             out_.push_back('-');
             emitCodepoint(hi);
         }
+    }
+
+    /// Start of the class whose closing ']' is at `classEnd`. Scans forward so
+    /// a leading literal ']' (`[]*\[]`) and POSIX items cannot confuse it.
+    static size_t classStartFor(std::string_view out, size_t classEnd) {
+        size_t start = 0;
+        bool inClass = false;
+        bool first = false;
+        for (size_t i = 0; i <= classEnd && i < out.size(); ++i) {
+            const char c = out[i];
+            if (!inClass) {
+                if (c == '\\') {
+                    ++i;
+                    continue;
+                }
+                if (c == '[') {
+                    inClass = true;
+                    start = i;
+                    first = true;
+                }
+                continue;
+            }
+            if (c == '\\') {
+                ++i;
+                first = false;
+                continue;
+            }
+            if (c == '[' && i + 1 < out.size() &&
+                (out[i + 1] == ':' || out[i + 1] == '.' || out[i + 1] == '=')) {
+                const size_t close = out.find(']', i + 2);
+                if (close == std::string_view::npos) return start;
+                i = close;
+                first = false;
+                continue;
+            }
+            if (c == ']') {
+                if (first) {
+                    first = false;
+                    continue;
+                }
+                if (i == classEnd) return start;
+                inClass = false;
+                continue;
+            }
+            first = false;
+        }
+        return classEnd;
+    }
+
+    /// `[` outside a class. Most classes stream through the normal
+    /// in-class path. A class that contains a top-level nested *negated*
+    /// class we cannot enumerate (`[^\s\p{S}\p{P}]`) is emitted whole as a
+    /// PCRE2 extended class, because there the union of the positive part and
+    /// the negated part is expressible: `(?[ [pos] | [^neg] ])`.
+    /// Returns true when it consumed the class (successfully or by failing).
+    bool tryHandleExtendedClass() {
+        const size_t open = i_;
+        const size_t close = findClassEnd(open);
+        if (close == std::string_view::npos) return false;
+        const std::string_view body = src_.substr(open + 1, close - open - 1);
+        if (body.empty() || body.front() == '^') return false;  // streaming handles it
+
+        std::vector<std::pair<size_t, size_t>> negated;
+        for (size_t k = 0; k < body.size();) {
+            const char c = body[k];
+            if (c == '\\') {
+                k += 2;
+                continue;
+            }
+            if (c == '[') {
+                const size_t inner = classCloseIn(body, k);
+                if (inner == std::string_view::npos) return false;
+                if (k + 1 < body.size() && body[k + 1] == '^') {
+                    std::vector<std::pair<uint32_t, uint32_t>> ranges;
+                    if (!parseSimpleClassBody(body.substr(k + 2, inner - k - 2), ranges)) {
+                        negated.emplace_back(k, inner);
+                    }
+                }
+                k = inner + 1;
+                continue;
+            }
+            ++k;
+        }
+        if (negated.empty()) return false;  // nothing the simple path cannot do
+
+        std::string alt;
+        bool firstAlt = true;
+        const auto appendChunk = [&](std::string_view chunk) -> bool {
+            if (chunk.empty()) return true;
+            std::string translated;
+            std::string reason;
+            if (!translateOnigToPcre2(std::string("[") + std::string(chunk) + "]", translated,
+                                      reason)) {
+                fail(reason);
+                return false;
+            }
+            if (translated.size() < 2u || translated.front() != '[' || translated.back() != ']') {
+                fail("class rewrite produced a non-class fragment");
+                return false;
+            }
+            if (!firstAlt) alt.push_back('|');
+            firstAlt = false;
+            alt += translated;
+            return true;
+        };
+
+        size_t pos = 0;
+        for (const auto& [begin, end] : negated) {
+            if (!appendChunk(body.substr(pos, begin - pos))) break;
+            std::string translated;
+            std::string reason;
+            if (!translateOnigToPcre2(std::string(body.substr(begin, end - begin + 1)),
+                                      translated, reason)) {
+                fail(reason);
+                break;
+            }
+            if (!firstAlt) alt.push_back('|');
+            firstAlt = false;
+            alt += translated;
+            pos = end + 1;
+        }
+        if (!ok_) {
+            i_ = close + 1;
+            return true;
+        }
+        if (!appendChunk(body.substr(pos))) {
+            i_ = close + 1;
+            return true;
+        }
+        if (firstAlt) {
+            fail("empty extended character class");
+            i_ = close + 1;
+            return true;
+        }
+        out_ += "(?[";
+        out_ += alt;
+        out_ += "])";
+        i_ = close + 1;
+        return true;
+    }
+
+    /// Finds the ']' closing the class opened at `open` in `s` (relative scan).
+    static size_t classCloseIn(std::string_view s, size_t open) {
+        size_t k = open + 1;
+        if (k < s.size() && s[k] == '^') ++k;
+        bool first = true;
+        for (; k < s.size(); ++k) {
+            const char c = s[k];
+            if (c == '\\') {
+                ++k;
+                first = false;
+                continue;
+            }
+            if (c == ']') {
+                if (first) {
+                    first = false;
+                    continue;
+                }
+                return k;
+            }
+            if (c == '[' && k + 1 < s.size() &&
+                (s[k + 1] == ':' || s[k + 1] == '.' || s[k + 1] == '=')) {
+                const size_t close = s.find(']', k + 2);
+                if (close == std::string_view::npos) return std::string_view::npos;
+                k = close;
+                first = false;
+                continue;
+            }
+            first = false;
+        }
+        return std::string_view::npos;
     }
 
     /// Finds the ']' closing the class opened at `open` (which points at '[').
@@ -612,19 +785,7 @@ private:
     static size_t atomStart(std::string_view out, size_t end) {
         if (end == 0u) return 0u;
         const char c = out[end - 1u];
-        if (c == ']') {
-            size_t depth = 0;
-            for (size_t k = end; k-- > 0u;) {
-                if (isEscaped(out, k)) continue;
-                if (out[k] == ']') {
-                    ++depth;
-                } else if (out[k] == '[') {
-                    --depth;
-                    if (depth == 0u) return k;
-                }
-            }
-            return end - 1u;
-        }
+        if (c == ']') return classStartFor(out, end - 1u);
         if (c == ')') {
             size_t depth = 0;
             for (size_t k = end; k-- > 0u;) {
