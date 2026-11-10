@@ -168,7 +168,7 @@ constexpr std::string_view kRulesGrammar = R"json({
     { "patterns": [ { "match": "z", "name": "m.z" } ] },
     { "name": "decoration.only" },
     { "begin": "(x)", "end": "(y)", "captures": { "1": {"name":"shared"} } },
-    { "match": "q", "captures": { "abc": {"name":"bogus"}, "300": {"name":"too-big"} } }
+    { "match": "q", "captures": { "abc": {"name":"bogus"}, "99999999": {"name":"too-big"}, "912": {"name":"junction"} } }
   ]
 })json";
 
@@ -238,9 +238,13 @@ TEST(LoadGrammar, RuleShapes) {
     EXPECT_EQ(shared.beginCaptures[1].name, "shared");
     EXPECT_EQ(shared.endCaptures[1].name, "shared");
 
-    // Non-numeric and out-of-range capture keys are ignored, never allocated.
+    // Non-numeric and absurd capture keys are ignored, never allocated. Real
+    // grammars do use group numbers in the hundreds (html.json's entity rule
+    // uses 912 for its ';' capture), so that one must survive.
     const Rule& bogus = g.rule(top[6]);
-    EXPECT_TRUE(bogus.captures.empty());
+    ASSERT_EQ(bogus.captures.size(), 913u);
+    EXPECT_EQ(bogus.captures[912].name, "junction");
+    EXPECT_TRUE(bogus.captures[300].isNull());
 }
 
 TEST(LoadGrammar, CaptureWithPatternsGetsASyntheticContainer) {

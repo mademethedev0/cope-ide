@@ -627,8 +627,12 @@ void Tokenizer::handleCaptures(std::string_view line, const State& stack, ScopeS
 
         if (spec.patternsRule != kInvalidRuleId && captureDepth < kMaxCaptureRecursionDepth) {
             // Re-tokenize the captured text with the capture's own patterns.
+            // vscode-textmate anchors this sub-tokenization on the RULE's
+            // content scopes, not on the local capture stack: a capture 0
+            // name covering the whole begin match must not leak into the
+            // capture's own body (e.g. C++ struct head whitespace).
             const std::string name = substituteScopeCaptures(spec.name, line, match);
-            const ScopeStackId nameScopes = scopeTable_.push(base, name);
+            const ScopeStackId nameScopes = scopeTable_.push(baseScopes, name);
             const std::string contentName = substituteScopeCaptures(spec.contentName, line, match);
             State::Frame frame;
             frame.rule = RuleRef{owner, spec.patternsRule};

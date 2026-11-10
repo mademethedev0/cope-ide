@@ -293,6 +293,38 @@ TEST(TokenizerTest, CaptureWithItsOwnPatternsIsRetokenized) {
     EXPECT_EQ(h.endState().depth(), 1u);  // the capture stack does not leak out
 }
 
+// Capture 2 is retokenized with its own patterns. vscode-textmate anchors a
+// retokenized capture on the RULE's content scopes, not on the capture stack,
+// so capture 0's whole-match name must not appear inside it -- while the
+// ordinary named captures on either side do keep it.
+constexpr std::string_view kCaptureZeroGrammar = R"json({
+  "scopeName": "source.zero",
+  "patterns": [
+    { "begin": "(A)(x)(B)", "end": "Z", "name": "outer",
+      "beginCaptures": {
+        "0": { "name": "whole" },
+        "1": { "name": "one" },
+        "2": { "patterns": [ { "match": "x", "name": "xt" } ] },
+        "3": { "name": "three" }
+      },
+      "patterns": [] }
+  ]
+})json";
+
+TEST(TokenizerTest, RetokenizedCaptureIgnoresCaptureZeroScope) {
+    Harness h(kCaptureZeroGrammar);
+    ASSERT_TRUE(h.loaded()) << h.error();
+
+    const Tokens tokens = h.tokenize("AxBZ", h.initialState());
+    const Tokens expected = {
+        {0u, 1u, "source.zero outer whole one"},
+        {1u, 2u, "source.zero outer xt"},  // no "whole" here
+        {2u, 3u, "source.zero outer whole three"},
+        {3u, 4u, "source.zero outer"},
+    };
+    EXPECT_EQ(tokens, expected);
+}
+
 // ---------------------------------------------------------------------------
 // applyEndPatternLast
 // ---------------------------------------------------------------------------

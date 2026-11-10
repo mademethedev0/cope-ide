@@ -39,11 +39,19 @@ namespace ide::syntax {
 ///   \p{alpha} \p{word} & co (POSIX long property names, unknown to PCRE2's
 ///                                    \p{...}) -> [[:alpha:]] / [:alpha:]
 ///                                    inside a class; \P{...} / \p{^...} negate
-///   a lone '{' (quantifier position: start, after '(' '|' or a quantifier —
-///                                    literal in Onig, error in PCRE2) -> \{
-///   \x{cp} with cp > U+00FF        -> the UTF-8 bytes of cp, wrapped
-///                                     (we compile in 8-bit non-UTF mode so
-///                                      arbitrary file bytes never fail a match)
+///   {m,n} directly after a quantifier  Onig means (ATOM Q){m,n}
+///                                    (nested quantifier, PCRE2 refuses it)
+///                                 -> (?:ATOM Q){m,n}
+///   nested classes [A[B]]          Onig means set union; PCRE2 has no nested
+///                                    classes -> flattened (a nested negated
+///                                    class is expanded to its complement)
+///   a lone '{' with nothing to repeat -> \{
+///   \x{cp} / \uXXXX / \o{...}       -> native \x{cp} (compiled in UTF mode)
+///
+/// Patterns are compiled with PCRE2_UTF|PCRE2_UCP (plus MATCH_INVALID_UTF when
+/// the library has it) because Oniguruma matches UTF-8 codepoints, not bytes;
+/// this makes classes, '.', \w and offsets agree with the reference engine.
+/// Invalid UTF-8 in a subject degrades to "no match", never to an error.
 /// Returns false with a reason when the pattern cannot be expressed; such
 /// patterns must be refused, never guessed. Never throws.
 [[nodiscard]] bool translateOnigToPcre2(std::string_view pattern, std::string& out,

@@ -5,9 +5,12 @@
 namespace ide::syntax {
 namespace {
 
-/// Highest capture group index the loader will materialise. Grammars use group
-/// numbers up to ~20; a bogus key like "99999999" must not allocate.
-constexpr int kMaxCaptureIndex = 255;
+/// Highest capture group index the loader will materialise. Most grammars use
+/// group numbers below 20, but some real TextMate grammars number junction
+/// captures in the hundreds (html.json uses group 912 for the entity ';'),
+/// and dropping those silently loses punctuation scopes. The cap only guards
+/// against a bogus key like "99999999" forcing a huge allocation.
+constexpr int kMaxCaptureIndex = 1024;
 
 const Rule& emptyRule() {
     static const Rule kEmpty;
@@ -15,7 +18,7 @@ const Rule& emptyRule() {
 }
 
 int parseCaptureIndex(std::string_view key) {
-    if (key.empty() || key.size() > 3) return -1;
+    if (key.empty() || key.size() > 4) return -1;
     int value = 0;
     for (char c : key) {
         if (c < '0' || c > '9') return -1;

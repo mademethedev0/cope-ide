@@ -1,7 +1,8 @@
 'use strict';
 
-// CI-only compatibility measurement. Differences are reported, not accepted
-// as correctness: the first run establishes evidence for a reviewed baseline.
+// CI-only compatibility gate against vscode-textmate + Oniguruma, the engines
+// real editors use. The reviewed corpus must tokenize byte-for-byte
+// identically: any differing byte is a regression, not a curiosity.
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -98,7 +99,7 @@ async function main() {
   });
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'cope-reference-'));
   const report = {
-    mode: 'measurement-not-regression-gate',
+    mode: 'regression-gate',
     versions: { textmate: require('vscode-textmate/package.json').version,
       oniguruma: require('vscode-oniguruma/package.json').version },
     backend: 'pcre2',
@@ -158,7 +159,16 @@ async function main() {
     report.missingScopes = [...missing].sort();
     fs.mkdirSync(path.dirname(reportPath), { recursive: true });
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
-    console.log(`Reference measurement complete: ${report.cases.length} cases; ${missing.size} unavailable embedded scopes. Differences are not gated yet.`);
+    const differing = report.cases.reduce((sum, item) => sum + item.differentBytes, 0);
+    if (differing > 0) {
+      console.error(
+        `Reference parity FAILED: ${differing} differing bytes across the reviewed corpus ` +
+        `(report: ${reportPath}).`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Reference parity OK: ${report.cases.length} cases, 0 differing bytes; ` +
+                `${missing.size} unavailable embedded scopes reported.`);
   } finally {
     registry.dispose();
     fs.rmSync(temp, { recursive: true, force: true });

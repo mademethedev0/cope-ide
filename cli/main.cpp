@@ -1115,9 +1115,9 @@ int commandDifftest(int argc, char** argv) {
       stdStats.lossy, outStyle.dim(), outStyle.reset(), pcre2Stats.compiled, pcre2Stats.rejected,
       outStyle.dim(), outStyle.reset(), outStyle.green(), recovered, outStyle.reset(),
       outStyle.dim(), refusedByBoth, outStyle.reset(), outStyle.dim(), pcre2Only, outStyle.reset());
-  // Known-hard patterns both engines refuse (unbounded lookbehind,
-  // codepoint escapes above U+00FF inside byte-mode classes) degrade
-  // identically under both engines: informational, not a gate.
+  // Known-hard patterns both engines refuse (unbounded lookbehind, unsupported
+  // set algebra) degrade identically under both engines: informational, not a
+  // gate.
   if (refusedByBoth > 0) {
     size_t shown = 0;
     for (const auto& [pattern, reason] : stdRejections) {

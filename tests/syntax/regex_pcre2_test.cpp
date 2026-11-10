@@ -52,7 +52,7 @@ TEST(Pcre2EngineTest, IdentityAndCaps) {
     EXPECT_TRUE(caps.anchorG);
     EXPECT_TRUE(caps.possessive);
     EXPECT_TRUE(caps.atomicGroups);
-    EXPECT_FALSE(caps.utf8Aware);  // byte mode by design
+    EXPECT_TRUE(caps.utf8Aware);  // PCRE2_UTF: codepoints, not bytes
 }
 
 TEST(Pcre2EngineTest, CompileRefusalReportsReasonAndCachesIt) {
@@ -308,9 +308,9 @@ TEST(Pcre2EngineTest, AnyCharEscapeO) {
     EXPECT_FALSE(re2->search("a\nb", 0).has_value());
 }
 
-TEST(Pcre2EngineTest, UnicodeEscapeBecomesUtf8Bytes) {
+TEST(Pcre2EngineTest, UnicodeEscapeMatchesCodepoint) {
     Pcre2RegexEngine engine;
-    // \u263A is U+263A (3 UTF-8 bytes); byte mode still matches it as bytes.
+    // \u263A is U+263A and occupies 3 UTF-8 bytes; UTF mode matches it whole.
     auto re = mustCompile(engine, "\\u263A");
     auto m = re->search("\xE2\x98\xBA", 0);
     ASSERT_TRUE(m.has_value());
@@ -371,24 +371,57 @@ TEST(Pcre2EngineTest, OnigPosixPropertyNamesCompileAndMatch) {
     EXPECT_EQ(cm->end, size_t(3));
 }
 
-TEST(Pcre2EngineTest, LoneBraceAfterQuantifierIsLiteral) {
-    // Oniguruma/ECMAScript read a '{' that cannot start a quantifier as a
-    // literal brace; PCRE2 refuses to compile. The translator escapes it.
+TEST(Pcre2EngineTest, NestedQuantifierAppliesToQuantifiedAtom) {
+    // Oniguruma reads `a+{0,1}` as (a+){0,1}; PCRE2 refuses a quantifier
+    // after a quantifier, so the translator groups the atom instead of
+    // escaping the brace (escaping silently changed the rule).
     Pcre2RegexEngine engine;
-    auto re = mustCompile(engine, "a+{0,1}");
-    auto m = re->search("xa{0,1}", 0);
+    auto re = mustCompile(engine, "(a+{0,1})b");
+    auto m = re->search("aaab", 0);
     ASSERT_TRUE(m.has_value());
-    EXPECT_EQ(m->begin, size_t(1));
-    EXPECT_EQ(m->end, size_t(7));
-    // A leading brace (nothing to repeat) is also literal.
+    EXPECT_EQ(m->end, size_t(4));
+    // Empty match before b is legal: the outer quantifier allows zero.
+    auto zero = mustCompile(engine, "x(a+{0,1})b");
+    auto zm = zero->search("xb", 0);
+    ASSERT_TRUE(zm.has_value());
+    EXPECT_EQ(zm->end, size_t(2));
+    // A leading brace (nothing to repeat) is still a literal.
     auto lead = mustCompile(engine, "{2}b");
     auto lm = lead->search("a{2}b", 0);
     ASSERT_TRUE(lm.has_value());
     EXPECT_EQ(lm->begin, size_t(1));
-    // A valid quantifier position must NOT be escaped.
+    // A valid quantifier position must NOT be rewritten.
     auto quant = mustCompile(engine, "ab{2}");
     EXPECT_TRUE(quant->search("abb", 0).has_value());
     EXPECT_FALSE(quant->search("ab", 0).has_value());
+}
+
+TEST(Pcre2EngineTest, UnicodeIdentifiersAreMatchedAsCodepoints) {
+    // Oniguruma's \w is Unicode-aware; PCRE2 needs UTF|UCP for the same.
+    Pcre2RegexEngine engine;
+    auto re = mustCompile(engine, "\\w+");
+    auto m = re->search("caf\xC3\xA9", 0);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_EQ(m->begin, size_t(0));
+    EXPECT_EQ(m->end, size_t(5));
+    // Invalid UTF-8 must not fail the search (MATCH_INVALID_UTF).
+    auto bad = re->search("caf\xFF", 0);
+    ASSERT_TRUE(bad.has_value());
+    EXPECT_EQ(bad->end, size_t(3));
+}
+
+TEST(Pcre2EngineTest, NestedCharacterClassUnion) {
+    // [a-z[0-9]] is a union in Oniguruma; PCRE2 has no nested classes.
+    Pcre2RegexEngine engine;
+    auto re = mustCompile(engine, "^[a-z[0-9]]+$");
+    EXPECT_TRUE(re->search("ab12z", 0).has_value());
+    EXPECT_FALSE(re->search("AB", 0).has_value());
+    // The non-ASCII idiom used by the CSS grammar: ASCII word chars plus any
+    // codepoint above U+007F.
+    auto ident = mustCompile(engine, "^[-A-Z_a-z[^\\x00-\\x7F]]+$");
+    EXPECT_TRUE(ident->search("card-name", 0).has_value());
+    EXPECT_TRUE(ident->search("caf\xC3\xA9", 0).has_value());
+    EXPECT_FALSE(ident->search("a b", 0).has_value());
 }
 
 TEST(Pcre2EngineTest, CacheServesRepeatedCompiles) {
@@ -469,18 +502,61 @@ TEST(Pcre2TranslateTest, EscapeRewrites) {
     EXPECT_EQ(out, "\\x{41}");
     EXPECT_TRUE(ide::syntax::translateOnigToPcre2("\\x{41}", out, reason));
     EXPECT_EQ(out, "\\x{41}");
+    // UTF mode: codepoints are native PCRE2 escapes, no byte re-encoding.
     EXPECT_TRUE(ide::syntax::translateOnigToPcre2("\\x{263A}", out, reason));
-    EXPECT_EQ(out, "(?:\xE2\x98\xBA)");
+    EXPECT_EQ(out, "\\x{263A}");
     EXPECT_TRUE(ide::syntax::translateOnigToPcre2("\\o{101}", out, reason));
     EXPECT_EQ(out, "\\x{41}");
 }
 
-TEST(Pcre2TranslateTest, RefusesHighCodepointInsideClass) {
+TEST(Pcre2TranslateTest, NestedCharacterClassesFlatten) {
     std::string out;
     std::string reason;
-    EXPECT_FALSE(ide::syntax::translateOnigToPcre2("[\\x{263A}]", out, reason));
-    EXPECT_FALSE(reason.empty());
+    // Positive nested class: brackets disappear, contents union.
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("[a-z[0-9]]", out, reason));
+    EXPECT_EQ(out, "[a-z0-9]");
+    // Negated nested class: expanded to the complement over Unicode.
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("[A[^\\x00-\\x7F]]", out, reason));
+    EXPECT_EQ(out, "[A\\x{80}-\\x{10ffff}]");
+    // A high codepoint inside a class is native now, not a refusal.
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("[\\x{263A}]", out, reason));
+    EXPECT_EQ(out, "[\\x{263A}]");
+    // POSIX classes keep their own closing bracket (not treated as nesting).
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("[[:alpha:]_]", out, reason));
+    EXPECT_EQ(out, "[[:alpha:]_]");
 }
+
+TEST(Pcre2TranslateTest, NestedQuantifierGroupsTheAtom) {
+    std::string out;
+    std::string reason;
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("a+{0,1}", out, reason));
+    EXPECT_EQ(out, "(?:a+){0,1}");
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("(ab)+?{2,3}", out, reason));
+    EXPECT_EQ(out, "(?:(ab)+?){2,3}");
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("\\s+{0,1}<x>", out, reason));
+    EXPECT_EQ(out, "(?:\\s+){0,1}<x>");
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("[a-c]+{0,1}", out, reason));
+    EXPECT_EQ(out, "(?:[a-c]+){0,1}");
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("\\w+{0,1}", out, reason));
+    EXPECT_EQ(out, "(?:\\w+){0,1}");
+}
+
+TEST(Pcre2TranslateTest, InvertedQuantifierRangeIsSwapped) {
+    // Oniguruma reads {min,max} as {1,2} when min > max; PCRE2 refuses.
+    std::string out;
+    std::string reason;
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("a{2,1}", out, reason));
+    EXPECT_EQ(out, "a{1,2}");
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("\\s+{1,0}/x", out, reason));
+    EXPECT_EQ(out, "(?:\\s+){0,1}/x");
+    // Valid quantifiers and literal braces are untouched.
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("a{2,3}", out, reason));
+    EXPECT_EQ(out, "a{2,3}");
+    EXPECT_TRUE(ide::syntax::translateOnigToPcre2("a{}", out, reason));
+    EXPECT_EQ(out, "a{}");
+}
+
+
 
 }  // namespace
 

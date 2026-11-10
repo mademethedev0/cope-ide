@@ -82,10 +82,54 @@ public:
             if (inClass_) {
                 if (c == '\\') {
                     stepEscape();
-                } else {
-                    if (c == ']') inClass_ = false;
+                    classFirst_ = false;
+                } else if (c == '^' && classFirst_) {
+                    // Negation sign; still "first" for the literal-']' rule.
                     out_.push_back(c);
                     ++i_;
+                } else if (c == ']' && classFirst_) {
+                    // A ']' as the first data character is a literal.
+                    out_.push_back(c);
+                    classFirst_ = false;
+                    ++i_;
+                } else if (c == '[' && i_ + 1 < n &&
+                           (src_[i_ + 1] == ':' || src_[i_ + 1] == '.' || src_[i_ + 1] == '=')) {
+                    // POSIX class / collating element / equivalence class:
+                    // copy through its own ']' so it cannot close the outer
+                    // class early.
+                    const size_t close = src_.find(']', i_ + 2);
+                    if (close == std::string_view::npos) {
+                        fail("unterminated POSIX character class");
+                    } else {
+                        out_.append(src_.substr(i_, close - i_ + 1));
+                        i_ = close + 1;
+                    }
+                    classFirst_ = false;
+                } else if (c == '[' && i_ + 1 < n && src_[i_ + 1] == '^') {
+                    // Oniguruma supports nested classes as set union; a
+                    // *negated* inner class has to be expanded to its
+                    // complement because PCRE2 has no nested classes.
+                    stepNestedNegatedClass();
+                    classFirst_ = false;
+                } else if (c == '[') {
+                    // Positive nested class: union means its brackets simply
+                    // disappear. Depth keeps the inner ']' from closing us.
+                    ++nestedClassDepth_;
+                    ++i_;
+                    classFirst_ = false;
+                } else if (c == ']') {
+                    if (nestedClassDepth_ > 0) {
+                        --nestedClassDepth_;
+                    } else {
+                        inClass_ = false;
+                        out_.push_back(c);
+                    }
+                    ++i_;
+                    classFirst_ = false;
+                } else {
+                    out_.push_back(c);
+                    ++i_;
+                    classFirst_ = false;
                 }
                 continue;
             }
@@ -93,6 +137,9 @@ public:
                 stepEscape();
             } else if (c == '[') {
                 inClass_ = true;
+                classNegated_ = (i_ + 1 < n && src_[i_ + 1] == '^');
+                classFirst_ = true;
+                nestedClassDepth_ = 0;
                 out_.push_back(c);
                 ++i_;
             } else if (c == '(' && i_ + 1 < n && src_[i_ + 1] == '?') {
@@ -119,45 +166,250 @@ private:
         reason_ = std::string(reason);
     }
 
-    /// Emits a codepoint above U+00FF as its UTF-8 bytes wrapped in a
-    /// non-capturing group, because we compile in 8-bit non-UTF mode (so
-    /// arbitrary file bytes can never make a match fail) and PCRE2 refuses
-    /// \x{cp} with cp > 0xFF in that mode. Byte-oriented, like StdRegex.
-    void emitCodepoint(uint32_t cp) {
-        if (inClass_) {
-            fail("codepoint above U+00FF inside a character class");
-            return;
-        }
-        char buf[4];
-        int len = 0;
-        if (cp < 0x800u) {
-            buf[0] = static_cast<char>(0xC0u | (cp >> 6));
-            buf[1] = static_cast<char>(0x80u | (cp & 0x3Fu));
-            len = 2;
-        } else if (cp < 0x10000u) {
-            buf[0] = static_cast<char>(0xE0u | (cp >> 12));
-            buf[1] = static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu));
-            buf[2] = static_cast<char>(0x80u | (cp & 0x3Fu));
-            len = 3;
-        } else {
-            buf[0] = static_cast<char>(0xF0u | (cp >> 18));
-            buf[1] = static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu));
-            buf[2] = static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu));
-            buf[3] = static_cast<char>(0x80u | (cp & 0x3Fu));
-            len = 4;
-        }
-        out_ += "(?:";
-        out_.append(buf, static_cast<size_t>(len));
-        out_ += ")";
-    }
+    /// PCRE2 is compiled with PCRE2_UTF|PCRE2_UCP, so a codepoint is emitted
+    /// natively. This matches Oniguruma's UTF-8 semantics exactly and works
+    /// inside character classes too.
+    void emitCodepoint(uint32_t cp) { emitSmallCodepoint(cp); }
 
     void emitSmallCodepoint(uint32_t cp) {
         static const char kHex[] = "0123456789abcdef";
         out_ += "\\x{";
-        // At most two digits: callers guarantee cp <= 0xFF.
-        if (cp >= 0x10u) out_.push_back(kHex[(cp >> 4) & 0xFu]);
-        out_.push_back(kHex[cp & 0xFu]);
-        out_ += "}";
+        char digits[8];
+        int n = 0;
+        do {
+            digits[n++] = kHex[cp & 0xFu];
+            cp >>= 4;
+        } while (cp != 0u);
+        while (n > 0) out_.push_back(digits[--n]);
+        out_ += '}';
+    }
+
+    /// Decodes one UTF-8 codepoint at `pos`. Returns bytes consumed or 0.
+    static size_t decodeUtf8(std::string_view s, size_t pos, uint32_t& cp) {
+        if (pos >= s.size()) return 0;
+        const auto b0 = static_cast<unsigned char>(s[pos]);
+        if (b0 < 0x80u) {
+            cp = b0;
+            return 1;
+        }
+        size_t len = 0;
+        uint32_t value = 0;
+        if ((b0 & 0xE0u) == 0xC0u) {
+            len = 2;
+            value = b0 & 0x1Fu;
+        } else if ((b0 & 0xF0u) == 0xE0u) {
+            len = 3;
+            value = b0 & 0x0Fu;
+        } else if ((b0 & 0xF8u) == 0xF0u) {
+            len = 4;
+            value = b0 & 0x07u;
+        } else {
+            return 0;
+        }
+        if (pos + len > s.size()) return 0;
+        for (size_t k = 1; k < len; ++k) {
+            const auto b = static_cast<unsigned char>(s[pos + k]);
+            if ((b & 0xC0u) != 0x80u) return 0;
+            value = (value << 6) | (b & 0x3Fu);
+        }
+        cp = value;
+        return len;
+    }
+
+    /// One simple codepoint token in a class body: a literal (UTF-8 decoded),
+    /// \xHH, \x{...}, \o{...}, \uXXXX or a single-char escape. Returns the
+    /// bytes consumed, or 0 when the token is not a plain codepoint.
+    static size_t classAtom(std::string_view s, size_t pos, uint32_t& cp) {
+        if (pos >= s.size()) return 0;
+        if (s[pos] != '\\') return decodeUtf8(s, pos, cp);
+        if (pos + 1 >= s.size()) return 0;
+        const char d = s[pos + 1];
+        if (d == 'x') {  // lowercase only: \X is a grapheme cluster in Onig
+            if (pos + 2 < s.size() && s[pos + 2] == '{') {
+                const size_t close = s.find('}', pos + 3);
+                if (close == std::string_view::npos) return 0;
+                return parseHex(s.substr(pos + 3, close - pos - 3), cp) ? close - pos + 1 : 0;
+            }
+            if (pos + 3 < s.size() && isHexDigitChar(s[pos + 2]) && isHexDigitChar(s[pos + 3])) {
+                const auto hv = [](char c) -> uint32_t {
+                    if (c >= '0' && c <= '9') return static_cast<uint32_t>(c - '0');
+                    return static_cast<uint32_t>((c | 0x20) - 'a' + 10);
+                };
+                cp = hv(s[pos + 2]) * 16u + hv(s[pos + 3]);
+                return 4;
+            }
+            return 0;
+        }
+        if (d == 'o' && pos + 2 < s.size() && s[pos + 2] == '{') {
+            const size_t close = s.find('}', pos + 3);
+            if (close == std::string_view::npos) return 0;
+            return parseOctal(s.substr(pos + 3, close - pos - 3), cp) ? close - pos + 1 : 0;
+        }
+        if (d == 'u') {
+            if (pos + 2 < s.size() && s[pos + 2] == '{') {
+                const size_t close = s.find('}', pos + 3);
+                if (close == std::string_view::npos) return 0;
+                return parseHex(s.substr(pos + 3, close - pos - 3), cp) ? close - pos + 1 : 0;
+            }
+            if (pos + 5 < s.size()) {
+                bool hex = true;
+                for (size_t k = 0; k < 4; ++k) {
+                    if (!isHexDigitChar(s[pos + 2 + k])) hex = false;
+                }
+                if (hex && parseHex(s.substr(pos + 2, 4), cp)) return 6;
+            }
+            return 0;
+        }
+        switch (d) {
+            case 'n': cp = 0x0Au; return 2;
+            case 't': cp = 0x09u; return 2;
+            case 'r': cp = 0x0Du; return 2;
+            case 'f': cp = 0x0Cu; return 2;
+            case 'v': cp = 0x0Bu; return 2;
+            case 'a': cp = 0x07u; return 2;
+            case 'e': cp = 0x1Bu; return 2;
+            case '0':
+                // \0 followed by a digit is an octal escape on Oniguruma;
+                // do not guess, let the pattern be refused instead.
+                if (pos + 2 < s.size() && isDigitChar(s[pos + 2])) return 0;
+                cp = 0x00u;
+                return 2;
+            default: break;
+        }
+        const bool alphanumeric = (d >= '0' && d <= '9') || (d >= 'a' && d <= 'z') ||
+                                  (d >= 'A' && d <= 'Z');
+        if (alphanumeric) {
+            // \w \d \s \h \p \P \R \X \k ... are character sets or
+            // assertions, not literals. Evaluating them as the literal letter
+            // would silently change the class; refuse instead.
+            return 0;
+        }
+        // An escaped punctuation character is that literal (\-, \., \] ...).
+        return decodeUtf8(s, pos + 1, cp) ? 2 : 0;
+    }
+
+    /// Parses a class body into codepoint ranges. Rejects anything that is not
+    /// a plain literal/escape/range (properties, POSIX classes, set algebra).
+    static bool parseSimpleClassBody(std::string_view body,
+                                     std::vector<std::pair<uint32_t, uint32_t>>& ranges) {
+        size_t pos = 0;
+        while (pos < body.size()) {
+            uint32_t lo = 0;
+            size_t used = classAtom(body, pos, lo);
+            if (used == 0) return false;
+            pos += used;
+            uint32_t hi = lo;
+            if (pos + 1 < body.size() && body[pos] == '-') {
+                uint32_t next = 0;
+                const size_t nextUsed = classAtom(body, pos + 1, next);
+                if (nextUsed != 0) {
+                    hi = next;
+                    pos += 1 + nextUsed;
+                }
+            }
+            if (hi < lo) return false;
+            ranges.emplace_back(lo, hi);
+        }
+        return !ranges.empty();
+    }
+
+    /// Appends the ranges as PCRE2 class content, or fails when empty.
+    void emitComplementRanges(std::vector<std::pair<uint32_t, uint32_t>> ranges) {
+        std::sort(ranges.begin(), ranges.end());
+        std::vector<std::pair<uint32_t, uint32_t>> merged;
+        for (const auto& r : ranges) {
+            if (!merged.empty() && r.first <= merged.back().second + 1u) {
+                if (r.second > merged.back().second) merged.back().second = r.second;
+            } else {
+                merged.push_back(r);
+            }
+        }
+        uint32_t cursor = 0;
+        bool any = false;
+        for (const auto& r : merged) {
+            if (r.first > cursor) {
+                emitCodepointRange(cursor, r.first - 1u);
+                any = true;
+            }
+            if (r.second + 1u > cursor) cursor = r.second + 1u;
+        }
+        if (cursor <= 0x10FFFFu) {
+            emitCodepointRange(cursor, 0x10FFFFu);
+            any = true;
+        }
+        if (!any) fail("empty nested character class complement");
+    }
+
+    void emitCodepointRange(uint32_t lo, uint32_t hi) {
+        emitCodepoint(lo);
+        if (hi > lo) {
+            out_.push_back('-');
+            emitCodepoint(hi);
+        }
+    }
+
+    /// Finds the ']' closing the class opened at `open` (which points at '[').
+    size_t findClassEnd(size_t open) const {
+        size_t k = open + 1;
+        if (k < src_.size() && src_[k] == '^') ++k;
+        bool first = true;  // a ']' directly after '[' or '[^' is a literal
+        for (; k < src_.size(); ++k) {
+            const char c = src_[k];
+            if (c == '\\') {
+                ++k;
+                first = false;
+                continue;
+            }
+            if (c == ']') {
+                if (first) {
+                    first = false;
+                    continue;
+                }
+                return k;
+            }
+            if (c == '[') {
+                const size_t inner = findClassEnd(k);
+                if (inner == std::string_view::npos) return std::string_view::npos;
+                k = inner;
+                first = false;
+                continue;
+            }
+            first = false;
+        }
+        return std::string_view::npos;
+    }
+
+    /// `[^...]` nested inside a positive class: expand to the complement of
+    /// its range set. Oniguruma reads nested classes as set union; PCRE2 has
+    /// no nesting, so the union has to be flattened here.
+    void stepNestedNegatedClass() {
+        const size_t close = findClassEnd(i_);
+        if (close == std::string_view::npos) {
+            fail("unterminated nested character class");
+            i_ = src_.size();
+            return;
+        }
+        if (classNegated_) {
+            fail("negated nested character class inside a negated class");
+            i_ = close + 1;
+            return;
+        }
+        std::vector<std::pair<uint32_t, uint32_t>> ranges;
+        const std::string_view body = src_.substr(i_ + 2, close - i_ - 2);
+        if (body.find("&&") != std::string_view::npos) {
+            // Oniguruma class intersection. Not evaluable here; refusing is
+            // better than emitting a class that silently means something else.
+            fail("set intersection inside a nested negated class");
+            i_ = close + 1;
+            return;
+        }
+        if (!parseSimpleClassBody(body, ranges)) {
+            fail("unsupported nested negated character class");
+            i_ = close + 1;
+            return;
+        }
+        emitComplementRanges(std::move(ranges));
+        i_ = close + 1;
     }
 
     void stepEscape() {
@@ -219,28 +471,197 @@ private:
         }
     }
 
-    /// A '{' that cannot begin a quantifier (at pattern start, or right after
-    /// '(', '|', or another quantifier) is a literal brace in Oniguruma;
-    /// PCRE2 makes it a hard compile error ("quantifier does not follow a
-    /// repeatable item", "nothing to repeat"). Escape it so both engines
-    /// read the same literal. Over-accepts slightly: a brace Oniguruma would
-    /// also refuse compiles here as a literal, which is harmless.
+    /// A '{' after a quantifier is a NESTED quantifier in Oniguruma: `a+{0,1}`
+    /// means `(a+){0,1}`. PCRE2 refuses that outright ("quantifier does not
+    /// follow a repeatable item"), so rewrite it to the equivalent grouped
+    /// form. Treating the brace as a literal (the old behaviour) compiles but
+    /// silently changes the rule, which is how every C++ `template<...>` rule
+    /// stopped matching. A brace at pattern start or right after '(' / '|' has
+    /// nothing to repeat: escape that one so both engines read a literal.
     void stepBrace() {
+        if (endsWithQuantifier(out_)) {
+            wrapQuantifiedAtom();
+            emitQuantifier();
+            return;
+        }
         const char prev = out_.empty() ? '\0' : out_.back();
-        const bool quantifiable = !out_.empty() && prev != '(' && prev != '|' && prev != '*' &&
-                                  prev != '+' && prev != '?';
+        const bool quantifiable = !out_.empty() && prev != '(' && prev != '|';
         if (quantifiable) {
-            out_.push_back('{');
+            emitQuantifier();
         } else {
             out_ += "\\{";
+            ++i_;
         }
+    }
+
+    /// Emits the quantifier starting at src_[i_] == '{'. Oniguruma swaps an
+    /// inverted range (`a{2,1}` behaves like `a{1,2}`); PCRE2 refuses to
+    /// compile it. Anything that is not a valid quantifier is emitted with
+    /// its brace open so the main loop copies it as literal text, which is
+    /// exactly how both engines read `a{}` and `x{foo}`.
+    void emitQuantifier() {
+        const size_t open = i_;
+        const size_t close = src_.find('}', open + 1);
+        if (close != std::string_view::npos) {
+            uint32_t lo = 0;
+            uint32_t hi = 0;
+            bool hasLo = false;
+            bool hasHi = false;
+            bool comma = false;
+            bool valid = true;
+            for (size_t k = open + 1; k < close; ++k) {
+                const char c = src_[k];
+                if (c >= '0' && c <= '9') {
+                    const uint32_t digit = static_cast<uint32_t>(c - '0');
+                    if (!comma) {
+                        lo = lo * 10u + digit;
+                        hasLo = true;
+                    } else {
+                        hi = hi * 10u + digit;
+                        hasHi = true;
+                    }
+                    if (lo > 1000000u || hi > 1000000u) {
+                        valid = false;  // absurd bound: leave the text alone
+                        break;
+                    }
+                } else if (c == ',' && !comma) {
+                    comma = true;
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid && hasLo && comma && hasHi && lo > hi) {
+                out_.push_back('{');
+                out_.append(std::to_string(hi));
+                out_.push_back(',');
+                out_.append(std::to_string(lo));
+                out_.push_back('}');
+                i_ = close + 1;
+                return;
+            }
+        }
+        out_.push_back('{');
         ++i_;
+    }
+
+    /// True when `out` ends in a quantifier: `*`, `+`, `?`, or a complete
+    /// `{m,n}`. Escapes such as `\x{41}` / `\p{L}` are not quantifiers.
+    static bool endsWithQuantifier(std::string_view out) {
+        if (out.empty()) return false;
+        const char c = out.back();
+        if (c == '*' || c == '+' || c == '?') return true;
+        return isQuantifierClose(out);
+    }
+
+    /// `out` ends with a `{digits[,digits]}` quantifier (and not an escape).
+    static bool isQuantifierClose(std::string_view out) {
+        if (out.size() < 3u || out.back() != '}') return false;
+        const size_t open = out.rfind('{');
+        if (open == std::string_view::npos || open == 0u) return false;
+        // \x{41} / \p{L} / \P{L} / \o{7} are escapes, not quantifiers.
+        if (open >= 2u && out[open - 2u] == '\\' &&
+            (out[open - 1u] == 'x' || out[open - 1u] == 'p' || out[open - 1u] == 'P' ||
+             out[open - 1u] == 'o')) {
+            return false;
+        }
+        bool digits = false;
+        for (size_t k = open + 1u; k + 1u < out.size(); ++k) {
+            const char c = out[k];
+            if (c >= '0' && c <= '9') {
+                digits = true;
+            } else if (c != ',') {
+                return false;
+            }
+        }
+        return digits;
+    }
+
+    /// True when the byte at `pos` is preceded by an odd number of backslashes.
+    static bool isEscaped(std::string_view out, size_t pos) {
+        size_t n = 0;
+        while (pos > 0u && out[pos - 1u] == '\\') {
+            --pos;
+            ++n;
+        }
+        return (n & 1u) != 0u;
+    }
+
+    /// Index just past the quantified atom, i.e. the end with its quantifier
+    /// (and any lazy/possessive modifier) stripped: `(ab)+?` -> end of `)`.
+    static size_t skipQuantifierSuffix(std::string_view out, size_t end) {
+        while (end > 0u) {
+            const char c = out[end - 1u];
+            if (c == '*' || c == '+' || c == '?') {
+                --end;
+                continue;
+            }
+            if (c == '}' && isQuantifierClose(out.substr(0u, end))) {
+                const size_t open = out.substr(0u, end).rfind('{');
+                if (open == std::string_view::npos) break;
+                end = open;
+                continue;
+            }
+            break;
+        }
+        return end;
+    }
+
+    /// Start of the single atom ending at `end`: a character class, a group,
+    /// an escape, or one literal byte.
+    static size_t atomStart(std::string_view out, size_t end) {
+        if (end == 0u) return 0u;
+        const char c = out[end - 1u];
+        if (c == ']') {
+            size_t depth = 0;
+            for (size_t k = end; k-- > 0u;) {
+                if (isEscaped(out, k)) continue;
+                if (out[k] == ']') {
+                    ++depth;
+                } else if (out[k] == '[') {
+                    --depth;
+                    if (depth == 0u) return k;
+                }
+            }
+            return end - 1u;
+        }
+        if (c == ')') {
+            size_t depth = 0;
+            for (size_t k = end; k-- > 0u;) {
+                if (isEscaped(out, k)) continue;
+                if (out[k] == ')') {
+                    ++depth;
+                } else if (out[k] == '(') {
+                    --depth;
+                    if (depth == 0u) return k;
+                }
+            }
+            return end - 1u;
+        }
+        if (c == '}') {
+            const size_t open = out.substr(0u, end).rfind('{');
+            if (open != std::string_view::npos && open >= 2u && out[open - 2u] == '\\') {
+                return open - 2u;  // \x{41} style escape atom
+            }
+            return end - 1u;
+        }
+        if (end >= 2u && out[end - 2u] == '\\') return end - 2u;  // \w, \s, ...
+        return end - 1u;
+    }
+
+    /// `ATOM Q` at the tail becomes `(?:ATOM Q)` so a following quantifier can
+    /// apply to the whole quantified atom the way Oniguruma reads it.
+    void wrapQuantifiedAtom() {
+        const size_t atomEnd = skipQuantifierSuffix(out_, out_.size());
+        const size_t start = atomStart(out_, atomEnd);
+        out_.insert(start, "(?:");
+        out_.push_back(')');
     }
 
     /// \p{...} / \P{...}: Oniguruma accepts the POSIX long names (alpha,
     /// alnum, word, print, ...) that PCRE2's Unicode property syntax does not
-    /// know. Those are rewritten to POSIX bracket classes -- exact in 8-bit
-    /// byte mode. Unicode property names (L, Lu, Greek, ...) are native PCRE2
+    /// know. Those are rewritten to POSIX bracket classes, which PCRE2_UCP
+    /// makes Unicode-aware. Unicode property names (L, Lu, Greek, ...) are native PCRE2
     /// and copied verbatim. Onig's \p{^Name} negation flips the sense.
     void stepProperty() {
         const bool negated = (src_[i_ + 1] == 'P');
@@ -340,11 +761,7 @@ private:
             if (close != std::string_view::npos) {
                 uint32_t cp = 0;
                 if (parseHex(src_.substr(j + 1, close - j - 1), cp)) {
-                    if (cp > 0xFFu) {
-                        emitCodepoint(cp);
-                    } else {
-                        emitSmallCodepoint(cp);
-                    }
+                    emitCodepoint(cp);
                     i_ = close + 1;
                     return;
                 }
@@ -356,11 +773,7 @@ private:
                 if (!isHexDigitChar(src_[j + k])) hex = false;
             }
             if (hex && parseHex(src_.substr(j, 4), cp)) {
-                if (cp > 0xFFu) {
-                    emitCodepoint(cp);
-                } else {
-                    emitSmallCodepoint(cp);
-                }
+                emitCodepoint(cp);
                 i_ = j + 4;
                 return;
             }
@@ -369,7 +782,7 @@ private:
         i_ += 2;
     }
 
-    /// \x{...}: verbatim for cp <= 0xFF (native), UTF-8 emission above that.
+    /// \x{...}: native PCRE2 syntax in UTF mode, emitted verbatim.
     void stepHexEscape() {
         const size_t j = i_ + 2;
         if (j < src_.size() && src_[j] == '{') {
@@ -377,11 +790,7 @@ private:
             if (close != std::string_view::npos) {
                 uint32_t cp = 0;
                 if (parseHex(src_.substr(j + 1, close - j - 1), cp)) {
-                    if (cp > 0xFFu) {
-                        emitCodepoint(cp);
-                    } else {
-                        out_ += src_.substr(i_, close - i_ + 1);  // verbatim
-                    }
+                    out_.append(src_.substr(i_, close - i_ + 1));
                     i_ = close + 1;
                     return;
                 }
@@ -399,11 +808,7 @@ private:
             if (close != std::string_view::npos) {
                 uint32_t cp = 0;
                 if (parseOctal(src_.substr(j + 1, close - j - 1), cp)) {
-                    if (cp > 0xFFu) {
-                        emitCodepoint(cp);
-                    } else {
-                        emitSmallCodepoint(cp);
-                    }
+                    emitCodepoint(cp);
                     i_ = close + 1;
                     return;
                 }
@@ -450,6 +855,9 @@ private:
     std::string out_;
     std::string reason_;
     bool inClass_ = false;
+    bool classNegated_ = false;
+    bool classFirst_ = false;
+    int nestedClassDepth_ = 0;
     bool ok_ = true;
 };
 
@@ -588,9 +996,18 @@ std::shared_ptr<IRegex> Pcre2RegexEngine::compile(std::string_view pattern) noex
         } else {
             int errorCode = 0;
             PCRE2_SIZE errorOffset = 0;
-            pcre2_code* code = pcre2_compile(reinterpret_cast<PCRE2_SPTR>(translated.data()),
-                                             static_cast<PCRE2_SIZE>(translated.size()), 0u,
-                                             &errorCode, &errorOffset, nullptr);
+            // Oniguruma matches UTF-8 codepoints, not bytes, so PCRE2 must
+            // run in UTF mode with Unicode properties to reproduce it.
+            // MATCH_INVALID_UTF keeps hostile input safe: an invalid sequence
+            // stops a match instead of failing the whole search.
+            uint32_t compileOptions = PCRE2_UTF | PCRE2_UCP;
+#ifdef PCRE2_MATCH_INVALID_UTF
+            compileOptions |= PCRE2_MATCH_INVALID_UTF;
+#endif
+            pcre2_code* code =
+                pcre2_compile(reinterpret_cast<PCRE2_SPTR>(translated.data()),
+                              static_cast<PCRE2_SIZE>(translated.size()), compileOptions,
+                              &errorCode, &errorOffset, nullptr);
             if (code == nullptr) {
                 failureReason = pcre2ErrorMessage(errorCode, errorOffset);
                 failed = true;
@@ -636,7 +1053,7 @@ RegexEngineCaps Pcre2RegexEngine::caps() const noexcept {
     c.lookbehind = true;        // bounded lookbehind; unbounded refuses at compile
     c.anchorG = true;
     c.anchorAzZ = true;
-    c.unicodeProperties = true; // byte mode: only ASCII bytes can participate
+    c.unicodeProperties = true; // PCRE2_UCP: \p{...} and POSIX classes are Unicode-aware
     c.posixClasses = true;
     c.namedGroups = true;
     c.possessive = true;
@@ -644,8 +1061,8 @@ RegexEngineCaps Pcre2RegexEngine::caps() const noexcept {
     c.conditionals = true;
     c.subroutines = true;       // via the \g<> -> (?&name) rewrite
     c.keepOut = true;
-    c.graphemeCluster = true;   // byte-mode approximation of \X
-    c.utf8Aware = false;        // deliberate: 8-bit non-UTF mode, byte offsets
+    c.graphemeCluster = true;   // \X is native in UTF mode
+    c.utf8Aware = true;         // PCRE2_UTF: classes/quantifiers span codepoints
     return c;
 }
 
